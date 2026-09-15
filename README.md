@@ -124,6 +124,7 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 ```text
 docs/spec-v0.3.md              当前规格（唯一权威）
 docs/pending-user-tests.md     ⚠️ 需要你亲自验证的清单
+docs/codex-menu-shortcuts.md   Codex 菜单快捷键实测导出（44 条，可从运行中 App 重新生成）
 docs/phase0-summary.md         硬件实测结论与实现约束
 docs/hardware-probe.md         Phase 0 原始记录
 docs/phase1-verification.md    Phase 1 真机验证记录
