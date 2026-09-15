@@ -28,7 +28,7 @@ public final class ControllerEngine {
 
     /// Per-gesture keystroke overrides from config. Settable so a config reload takes effect without
     /// relaunching.
-    public var gestureOverrides: [String: KeyStroke] {
+    public var gestureOverrides: [String: GestureOverride] {
         get { resolver.gestureOverrides }
         set { resolver = EventResolver(bindings: resolver.bindings, gestureOverrides: newValue) }
     }
@@ -41,7 +41,7 @@ public final class ControllerEngine {
     public init(
         dispatcher: ActionDispatching,
         bindings: GestureBindings = .default,
-        gestureOverrides: [String: KeyStroke] = [:],
+        gestureOverrides: [String: GestureOverride] = [:],
         configuration: GestureConfiguration = .default,
         scheduler: GestureScheduler = DispatchGestureScheduler(),
         coordinator: ControllerInputCoordinator = ControllerInputCoordinator()

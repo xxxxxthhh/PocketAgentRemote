@@ -125,32 +125,49 @@ public enum GestureID {
     }()
 }
 
+/// A keystroke a gesture sends directly, bypassing the semantic vocabulary.
+public struct GestureOverride: Equatable, Sendable {
+    public var stroke: KeyStroke
+    /// Hold the stroke for the whole chord instead of tapping it.
+    ///
+    /// Only meaningful for **modifier-only** strokes, and only some targets want it: Doubao's voice
+    /// input, for example, offers both "单击左option+左shift" (a tap) and "长按右option" (a hold).
+    /// Ignored for strokes that have a key, where a tap is the only sensible reading.
+    public var isHeld: Bool
+
+    public init(stroke: KeyStroke, isHeld: Bool = false) {
+        self.stroke = stroke
+        self.isHeld = isHeld
+    }
+
+    public var holdsModifiersOnly: Bool { isHeld && stroke.isModifiersOnly }
+}
+
 public struct EventResolver: Sendable {
     public let bindings: GestureBindings
     /// Gesture identifier → keystroke. Takes precedence over the semantic binding for that gesture,
     /// which is how a user can point any gesture at any command without touching code.
-    public let gestureOverrides: [String: KeyStroke]
+    public let gestureOverrides: [String: GestureOverride]
 
-    public init(bindings: GestureBindings = .default, gestureOverrides: [String: KeyStroke] = [:]) {
+    public init(bindings: GestureBindings = .default, gestureOverrides: [String: GestureOverride] = [:]) {
         self.bindings = bindings
         self.gestureOverrides = gestureOverrides
     }
 
     public func triggers(for event: ResolvedEvent) -> [ActionTrigger] {
-        if let stroke = gestureOverrides[GestureID.of(event)] {
-            // A modifier-only binding has nothing to "press", so it is *held* for as long as the
-            // chord lasts: down when the chord starts, up when the secondary key is released.
-            // Anything with a key stays a one-shot press.
-            switch event {
-            case .gesture(.chord) where stroke.isHoldOnly:
-                return [.raw(stroke, .down)]
-            case .gesture(.chordReleased) where stroke.isHoldOnly:
-                return [.raw(stroke, .up)]
-            case .gesture(.chordReleased):
-                return []
-            default:
-                return [.raw(stroke, event.phase)]
+        if let override = gestureOverrides[GestureID.of(event)] {
+            let stroke = override.stroke
+            if override.holdsModifiersOnly {
+                // Held modifier-only binding: press on chord start, release when the chord ends.
+                switch event {
+                case .gesture(.chord): return [.raw(stroke, .down)]
+                case .gesture(.chordReleased): return [.raw(stroke, .up)]
+                default: break
+                }
             }
+            // Everything else is a tap. In particular a one-shot gesture ignores the release.
+            if case .gesture(.chordReleased) = event { return [] }
+            return [.raw(stroke, event.phase)]
         }
 
         switch event {

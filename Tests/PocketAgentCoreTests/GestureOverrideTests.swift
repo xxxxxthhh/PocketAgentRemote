@@ -2,58 +2,94 @@ import XCTest
 @testable import PocketAgentCore
 
 /// Per-gesture keystroke overrides: the mechanism that lets a gesture send a key with no semantic
-/// action at all, so the reachable command set is the whole Codex shortcut list rather than the
-/// handful of actions we happen to model.
+/// action at all, so the reachable command set is the whole shortcut list rather than the handful of
+/// actions we happen to model.
 final class GestureOverrideTests: XCTestCase {
     private let clearUnreads = KeyStroke(.escape, modifiers: [.shift])
+    private let optionShift = KeyStroke(modifiers: [.option, .shift])
 
-    func testOverrideReplacesTheSemanticBinding() {
-        let resolver = EventResolver(gestureOverrides: ["b.a": clearUnreads])
+    private func tap(_ stroke: KeyStroke) -> GestureOverride { GestureOverride(stroke: stroke) }
+    private func held(_ stroke: KeyStroke) -> GestureOverride {
+        GestureOverride(stroke: stroke, isHeld: true)
+    }
+
+    // MARK: - Key bindings are taps
+
+    func testKeyOverrideReplacesTheSemanticBinding() {
+        let resolver = EventResolver(gestureOverrides: ["b.a": tap(clearUnreads)])
         XCTAssertEqual(
             resolver.triggers(for: .gesture(.chord(modifier: .b, key: .a))),
             [.raw(clearUnreads, .press)]
         )
     }
 
-    func testBaseDirectionOverrideKeepsDownUpSemantics() {
-        let resolver = EventResolver(gestureOverrides: ["up": KeyStroke(.b, modifiers: [.command])])
-        XCTAssertEqual(resolver.triggers(for: .keyDown(.up)), [.raw(KeyStroke(.b, modifiers: [.command]), .down)])
-        XCTAssertEqual(resolver.triggers(for: .keyUp(.up)), [.raw(KeyStroke(.b, modifiers: [.command]), .up)])
+    func testKeyOverrideIgnoresTheChordRelease() {
+        let resolver = EventResolver(gestureOverrides: ["b.a": tap(clearUnreads)])
+        XCTAssertEqual(resolver.triggers(for: .gesture(.chordReleased(modifier: .b, key: .a))), [])
     }
 
+    func testBaseDirectionOverrideKeepsDownUpSemantics() {
+        let resolver = EventResolver(gestureOverrides: ["up": tap(KeyStroke(.b, modifiers: [.command]))])
+        let stroke = KeyStroke(.b, modifiers: [.command])
+        XCTAssertEqual(resolver.triggers(for: .keyDown(.up)), [.raw(stroke, .down)])
+        XCTAssertEqual(resolver.triggers(for: .keyUp(.up)), [.raw(stroke, .up)])
+    }
+
+    // MARK: - Modifier-only bindings
+
+    /// The motivating case: Doubao's voice input is triggered by *clicking* left Option + left
+    /// Shift — a tap, not a hold. Getting this backwards makes the feature do nothing.
+    func testModifierOnlyOverrideIsATapByDefault() {
+        let resolver = EventResolver(gestureOverrides: ["b.a": tap(optionShift)])
+
+        XCTAssertEqual(
+            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .a))),
+            [.raw(optionShift, .press)]
+        )
+        XCTAssertEqual(resolver.triggers(for: .gesture(.chordReleased(modifier: .b, key: .a))), [])
+    }
+
+    /// The other variant Doubao offers: 长按右option.
+    func testModifierOnlyCanOptIntoBeingHeld() {
+        let resolver = EventResolver(gestureOverrides: ["b.a": held(optionShift)])
+
+        XCTAssertEqual(
+            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .a))),
+            [.raw(optionShift, .down)]
+        )
+        XCTAssertEqual(
+            resolver.triggers(for: .gesture(.chordReleased(modifier: .b, key: .a))),
+            [.raw(optionShift, .up)]
+        )
+    }
+
+    func testHeldIsIgnoredForStrokesThatHaveAKey() {
+        // A held ⌘B would mean holding Command+B down, which is never what anyone means.
+        let override = held(KeyStroke(.b, modifiers: [.command]))
+        XCTAssertFalse(override.holdsModifiersOnly)
+
+        let resolver = EventResolver(gestureOverrides: ["b.a": override])
+        XCTAssertEqual(resolver.triggers(for: .gesture(.chord(modifier: .b, key: .a))), [.raw(KeyStroke(.b, modifiers: [.command]), .press)])
+        XCTAssertEqual(resolver.triggers(for: .gesture(.chordReleased(modifier: .b, key: .a))), [])
+    }
+
+    func testModifierOnlyStrokeKnowsItHasNoKey() {
+        XCTAssertTrue(optionShift.isModifiersOnly)
+        XCTAssertFalse(KeyStroke(.a).isModifiersOnly)
+        XCTAssertEqual(optionShift.description, "option+shift (held)")
+    }
+
+    // MARK: - Scoping
+
     func testTapAndHoldHaveSeparateIdentifiers() {
-        let resolver = EventResolver(gestureOverrides: ["b.tap": clearUnreads])
+        let resolver = EventResolver(gestureOverrides: ["b.tap": tap(clearUnreads)])
         XCTAssertEqual(resolver.triggers(for: .gesture(.tap(.b))), [.raw(clearUnreads, .press)])
         // hold is not overridden, so it keeps its semantic meaning
         XCTAssertEqual(resolver.triggers(for: .gesture(.hold(.b))), [.press(.cancelOrInterrupt)])
     }
 
-    func testModifierOnlyOverrideIsHeldForTheWholeChord() {
-        // The motivating case: holding ⌥⇧ to trigger an input method's voice input. A bare tap of
-        // ⌥⇧ with no key is invisible to almost everything, so it has to be held.
-        let held = KeyStroke(modifiers: [.option, .shift])
-        let resolver = EventResolver(gestureOverrides: ["b.a": held])
-
-        XCTAssertEqual(
-            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .a))),
-            [.raw(held, .down)]
-        )
-        XCTAssertEqual(
-            resolver.triggers(for: .gesture(.chordReleased(modifier: .b, key: .a))),
-            [.raw(held, .up)]
-        )
-    }
-
-    func testKeyOverrideStaysATapAndIgnoresTheRelease() {
-        let tap = KeyStroke(.b, modifiers: [.command])
-        let resolver = EventResolver(gestureOverrides: ["b.a": tap])
-
-        XCTAssertEqual(resolver.triggers(for: .gesture(.chord(modifier: .b, key: .a))), [.raw(tap, .press)])
-        XCTAssertEqual(resolver.triggers(for: .gesture(.chordReleased(modifier: .b, key: .a))), [])
-    }
-
     func testUnrelatedGesturesAreUnaffected() {
-        let resolver = EventResolver(gestureOverrides: ["b.a": clearUnreads])
+        let resolver = EventResolver(gestureOverrides: ["b.a": tap(clearUnreads)])
         XCTAssertEqual(resolver.triggers(for: .gesture(.chord(modifier: .b, key: .up))), [.press(.goToRecentChat1)])
         XCTAssertEqual(resolver.triggers(for: .keyDown(.left)), [.down(.navigateLeft)])
     }
@@ -65,6 +101,8 @@ final class GestureOverrideTests: XCTestCase {
         XCTAssertEqual(GestureID.of(.gesture(.tap(.b))), "b.tap")
         XCTAssertEqual(GestureID.of(.gesture(.hold(.b))), "b.hold")
         XCTAssertEqual(GestureID.of(.gesture(.chord(modifier: .b, key: .left))), "b.left")
+        // Start and end of a held binding share one identifier.
+        XCTAssertEqual(GestureID.of(.gesture(.chordReleased(modifier: .b, key: .left))), "b.left")
     }
 
     func testEveryDefaultGestureHasAnIdentifier() {
@@ -73,7 +111,7 @@ final class GestureOverrideTests: XCTestCase {
         XCTAssertTrue(ids.contains("b.tap"))
         XCTAssertTrue(ids.contains("b.hold"))
         XCTAssertTrue(ids.contains("b.a"))
-        XCTAssertTrue(ids.contains("a.left") == false, "a is not a modifier, so a.left must not exist")
+        XCTAssertFalse(ids.contains("a.left"), "a is not a modifier, so a.left must not exist")
     }
 }
 
@@ -100,19 +138,29 @@ final class ConfigCompatibilityTests: XCTestCase {
         XCTAssertTrue(config.gestureKeyOverrides.isEmpty)
     }
 
-    func testGestureOverridesAreParsedAndValidated() throws {
+    func testModifierOnlyBindingWithoutHoldDefaultsToATap() throws {
         let json = """
         {
           "gestureKeyOverrides" : {
-            "b.a" : { "key" : "escape", "modifiers" : [ "shift" ] },
+            "b.a" : { "modifiers" : [ "option", "shift" ] },
             "not.a.real.gesture" : { "key" : "z" }
           }
         }
         """
         let config = try JSONDecoder().decode(AppConfig.self, from: Data(json.utf8))
         XCTAssertEqual(config.gestureOverrides.count, 1, "unknown gesture ids must be dropped")
-        XCTAssertEqual(config.gestureOverrides["b.a"], KeyStroke(.escape, modifiers: [.shift]))
+        let override = try XCTUnwrap(config.gestureOverrides["b.a"])
+        XCTAssertEqual(override.stroke, KeyStroke(modifiers: [.option, .shift]))
+        XCTAssertFalse(override.isHeld, "a bare modifier binding must be a tap by default")
         XCTAssertEqual(config.unknownGestureIDs, ["not.a.real.gesture"])
+    }
+
+    func testHoldFlagIsParsed() throws {
+        let json = """
+        { "gestureKeyOverrides" : { "b.a" : { "modifiers" : [ "option" ], "hold" : true } } }
+        """
+        let config = try JSONDecoder().decode(AppConfig.self, from: Data(json.utf8))
+        XCTAssertTrue(config.gestureOverrides["b.a"]?.isHeld ?? false)
     }
 
     func testRoundTripThroughDiskKeepsGestureOverrides() throws {
@@ -125,12 +173,12 @@ final class ConfigCompatibilityTests: XCTestCase {
         let store = ConfigStore(url: url)
         store.load()
         store.update {
-            $0.gestureKeyOverrides = ["b.a": AppConfig.KeyBinding(key: .escape, modifiers: [.shift])]
+            $0.gestureKeyOverrides = ["b.a": AppConfig.KeyBinding(modifiers: [.option, .shift])]
         }
 
         let reloaded = ConfigStore(url: url)
         reloaded.load()
         XCTAssertNil(reloaded.loadWarning)
-        XCTAssertEqual(reloaded.config.gestureOverrides["b.a"], KeyStroke(.escape, modifiers: [.shift]))
+        XCTAssertEqual(reloaded.config.gestureOverrides["b.a"]?.stroke, KeyStroke(modifiers: [.option, .shift]))
     }
 }

@@ -29,31 +29,40 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var gestureKeyOverrides: [String: KeyBinding]
 
     public struct KeyBinding: Codable, Equatable, Sendable {
-        /// Nil means **modifiers only**, e.g. `{ "modifiers": ["option", "shift"] }` — a held
-        /// modifier chord with no character key.
+        /// Nil means **modifiers only**, e.g. `{ "modifiers": ["option", "shift"] }` — no character
+        /// key is pressed.
         public var key: Key?
         public var modifiers: [ModifierKey]
+        /// Hold the stroke for the whole chord instead of tapping it. Only meaningful for
+        /// modifier-only strokes (see `GestureOverride.isHeld`).
+        public var hold: Bool
 
-        public init(key: Key? = nil, modifiers: [ModifierKey] = []) {
+        public init(key: Key? = nil, modifiers: [ModifierKey] = [], hold: Bool = false) {
             self.key = key
             self.modifiers = modifiers
+            self.hold = hold
         }
 
         private enum CodingKeys: String, CodingKey {
-            case key, modifiers
+            case key, modifiers, hold
         }
 
-        /// Both fields are optional on purpose: `{ "key": "b" }` (unmodified key) and
+        /// Every field is optional on purpose: `{ "key": "b" }` (unmodified key) and
         /// `{ "modifiers": ["option", "shift"] }` (modifiers only) are both natural to write, and
         /// neither must fail the decode of the whole config.
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             key = try container.decodeIfPresent(Key.self, forKey: .key)
             modifiers = try container.decodeIfPresent([ModifierKey].self, forKey: .modifiers) ?? []
+            hold = try container.decodeIfPresent(Bool.self, forKey: .hold) ?? false
         }
 
         public var stroke: KeyStroke {
             KeyStroke(key: key, modifiers: Set(modifiers))
+        }
+
+        public var gestureOverride: GestureOverride {
+            GestureOverride(stroke: stroke, isHeld: hold)
         }
     }
 
@@ -142,11 +151,11 @@ public struct AppConfig: Codable, Equatable, Sendable {
 
     /// Gesture overrides with unknown identifiers dropped, so a typo degrades to "that one gesture
     /// keeps its default" rather than silently doing nothing.
-    public var gestureOverrides: [String: KeyStroke] {
-        var result: [String: KeyStroke] = [:]
+    public var gestureOverrides: [String: GestureOverride] {
+        var result: [String: GestureOverride] = [:]
         let known = Set(GestureID.all)
         for (gesture, binding) in gestureKeyOverrides where known.contains(gesture) {
-            result[gesture] = binding.stroke
+            result[gesture] = binding.gestureOverride
         }
         return result
     }
