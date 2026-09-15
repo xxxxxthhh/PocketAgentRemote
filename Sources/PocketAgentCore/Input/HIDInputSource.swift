@@ -110,7 +110,9 @@ public final class HIDInputSource: ControllerInputSource {
     private func deviceArrived(_ device: IOHIDDevice) {
         let product = stringProperty(device, kIOHIDProductKey)
         guard effectiveProducts.contains(product) else {
-            onDiagnostic?("ignoring unsupported gamepad \"\(product)\"")
+            // Usually the XInput variant, which GameControllerInputSource owns — not an error, and
+            // saying "unsupported" here would be misleading during a debug session.
+            onDiagnostic?("skipping gamepad \"\(product)\" (handled by another source)")
             return
         }
         attachedProduct = product

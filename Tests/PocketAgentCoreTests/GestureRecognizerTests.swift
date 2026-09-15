@@ -116,6 +116,31 @@ final class GestureRecognizerTests: XCTestCase {
         XCTAssertEqual(harness.gestures, [.chord(modifier: .b, key: .up)])
     }
 
+    /// Verified on hardware 2026-09-16: holding B and tapping several directions in turn fires one
+    /// chord per tap, because the modifier is still down when each new key goes down. The B layer
+    /// therefore behaves like a held modifier (Shift-style), not like a one-shot prefix.
+    func testHoldingBAllowsSeveralChordsInSequence() {
+        let harness = Harness()
+        harness.press(.b)
+        harness.press(.down)
+        harness.release(.down)
+        harness.press(.left)
+        harness.release(.left)
+        harness.press(.right)
+        harness.release(.right)
+        harness.release(.b)
+
+        XCTAssertEqual(harness.gestures, [
+            .chord(modifier: .b, key: .down),
+            .chord(modifier: .b, key: .left),
+            .chord(modifier: .b, key: .right),
+        ])
+        XCTAssertFalse(
+            harness.emitted.contains(.gesture(.hold(.b))),
+            "a B release after chords must not also emit Escape"
+        )
+    }
+
     // MARK: - Base layer
 
     func testDirectionProducesKeyDownAndKeyUp() {

@@ -19,6 +19,10 @@ public final class ControllerEngine {
     /// Called when a supported controller becomes usable, with its device name.
     public var onControllerAttached: ((String) -> Void)?
     public var onControllerDetached: ((String) -> Void)?
+    /// Raw press/release straight off the input source. For the debug monitor (spec §17).
+    public var onRawEvent: ((InputEvent) -> Void)?
+    /// Recognised gestures, before they are resolved into semantic actions.
+    public var onGesture: (([ResolvedEvent]) -> Void)?
 
     public let recognizer: GestureRecognizer
 
@@ -46,13 +50,16 @@ public final class ControllerEngine {
 
         recognizer.emit = { [weak self] events in
             guard let self else { return }
+            self.onGesture?(events)
             for trigger in self.resolver.triggers(for: events) {
                 self.dispatcher.dispatch(trigger)
             }
         }
 
         coordinator.onEvent = { [weak self] event in
-            self?.recognizer.handle(event)
+            guard let self else { return }
+            self.onRawEvent?(event)
+            self.recognizer.handle(event)
         }
         // A controller can vanish mid-gesture; without this the target app keeps whatever key was
         // down, and a half-finished B press stays armed (spec §17, §18).
