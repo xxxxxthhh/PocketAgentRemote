@@ -11,9 +11,9 @@ final class EventResolverTests: XCTestCase {
 
     func testChordMappingTable() {
         XCTAssertEqual(
-            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .up))), [.press(.cyclePermissionMode)])
+            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .up))), [.press(.newChat)])
         XCTAssertEqual(
-            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .down))), [.press(.toggleFastMode)])
+            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .down))), [.press(.openTerminal)])
         XCTAssertEqual(
             resolver.triggers(for: .gesture(.chord(modifier: .b, key: .left))), [.press(.openModelPicker)])
         XCTAssertEqual(
@@ -38,17 +38,35 @@ final class EventResolverTests: XCTestCase {
         for action in [AgentAction.navigateUp, .navigateDown, .navigateLeft, .navigateRight] {
             XCTAssertTrue(action.allowsRepeat, "\(action) may repeat")
         }
-        for action in [AgentAction.submit, .cancelOrInterrupt, .queueFollowUp,
-                       .cyclePermissionMode, .toggleFastMode, .openModelPicker, .inspectChanges] {
+        let nonRepeating: [AgentAction] = [
+            .submit, .cancelOrInterrupt, .queueFollowUp, .openModelPicker, .inspectChanges,
+            .toggleFastMode, .openPermissionModeMenu, .newChat, .archiveChat, .pinThread,
+            .forkThread, .openSideChat, .openTerminal,
+        ]
+        for action in nonRepeating {
             XCTAssertFalse(action.allowsRepeat, "\(action) must not repeat")
         }
     }
 
-    func testNavigationIsTheOnlyNavigationRisk() {
-        XCTAssertEqual(AgentAction.navigateUp.risk, .navigation)
+    func testOnlyNavigationCarriesNavigationRisk() {
+        for action in AgentAction.allCases where action.allowsRepeat {
+            XCTAssertEqual(action.risk, .navigation)
+        }
         XCTAssertEqual(AgentAction.submit.risk, .normal)
         XCTAssertEqual(AgentAction.cancelOrInterrupt.risk, .normal)
-        XCTAssertEqual(AgentAction.cyclePermissionMode.risk, .sensitive)
+        XCTAssertEqual(AgentAction.openPermissionModeMenu.risk, .sensitive)
+    }
+
+    func testApproveAndRejectShareSubmitAndCancel() {
+        // Deliberate: Codex and Claude both approve with Enter and decline with Escape, so adding
+        // separate approve/reject actions would mean two actions competing for one key.
+        XCTAssertFalse(AgentAction.allCases.contains { $0.rawValue == "approve" })
+        XCTAssertFalse(AgentAction.allCases.contains { $0.rawValue == "reject" })
+    }
+
+    func testPermissionModeIsNoLongerNamedAsACycle() {
+        XCTAssertNil(AgentAction(rawValue: "cyclePermissionMode"), "renamed to openPermissionModeMenu")
+        XCTAssertNotNil(AgentAction(rawValue: "openPermissionModeMenu"))
     }
 
     func testUnknownBindingsProduceNothing() {

@@ -12,6 +12,9 @@ public struct GestureBindings: Equatable, Sendable {
         self.bLayer = bLayer
     }
 
+    /// v0.3 default map. Every entry is a *class A* action — one with a macOS default accelerator
+    /// in the Codex desktop app — so the whole map works with zero user configuration (Codex Micro
+    /// mapping research §2).
     public static let `default` = GestureBindings(
         base: [
             .up: .navigateUp,
@@ -22,11 +25,11 @@ public struct GestureBindings: Equatable, Sendable {
             .b: .cancelOrInterrupt,
         ],
         bLayer: [
-            .up: .cyclePermissionMode,
-            .down: .toggleFastMode,
-            .left: .openModelPicker,
-            .right: .queueFollowUp,
-            .a: .inspectChanges,
+            .up: .newChat,            // ⌘N
+            .down: .openTerminal,     // ⌃`
+            .left: .openModelPicker,  // ⌃⇧M  (works, but is not part of the Codex Micro action set)
+            .right: .queueFollowUp,   // Enter while a turn is running
+            .a: .inspectChanges,      // ⌘⇧G
         ]
     )
 }

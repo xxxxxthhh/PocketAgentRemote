@@ -2,20 +2,45 @@ import Foundation
 
 /// Tool-independent semantic actions. The whole point of the design is that hardware layout and
 /// gesture recognition never mention a specific tool; only the adapter layer does (spec §5).
+///
+/// The vocabulary was re-cut in v0.3 to match the action set Codex itself considers worth binding
+/// to physical keys (the Codex Micro keycap inventory), because that set is verified to exist in
+/// the desktop app rather than guessed from the command registry.
 public enum AgentAction: String, Codable, CaseIterable, Sendable {
+    // MARK: Navigation
     case navigateUp
     case navigateDown
     case navigateLeft
     case navigateRight
 
+    // MARK: Composer / turn control
+    //
+    // `submit` doubles as **approve** and `cancelOrInterrupt` as **reject**: Codex and Claude both
+    // use Enter to approve and Escape to decline, and the approval UI keeps the final say (spec
+    // §17). We deliberately do NOT add separate `approve`/`reject` actions — they would be the very
+    // same keystroke, and two actions competing for one key is exactly how "switch permission mode"
+    // silently turns into "approve this command".
     case submit
     case cancelOrInterrupt
-
     case queueFollowUp
-    case cyclePermissionMode
-    case toggleFastMode
+
+    // MARK: Threads and workspace
+    case newChat
+    case archiveChat
+    case pinThread
+    case forkThread
+    case openSideChat
+    case openTerminal
+
+    // MARK: Modes and panels
     case openModelPicker
     case inspectChanges
+    case toggleFastMode
+    /// Opens the permission-mode menu. **Not a cycle**: neither the Codex desktop app (which has no
+    /// permission-mode action at all) nor Claude (menu plus a numeric choice) can cycle modes, so
+    /// the v0.1 name `cyclePermissionMode` was simply wrong. Adapters must report it as
+    /// unsupported on Codex rather than silently substituting an approval.
+    case openPermissionModeMenu
 }
 
 /// How risky an action is to fire (spec §10.5). Drives the guard rules in spec §12/§17.
@@ -90,8 +115,10 @@ public extension AgentAction {
         switch self {
         case .navigateUp, .navigateDown, .navigateLeft, .navigateRight: return .navigation
         case .submit, .cancelOrInterrupt: return .normal
-        case .queueFollowUp, .cyclePermissionMode, .toggleFastMode,
-             .openModelPicker, .inspectChanges: return .sensitive
+        case .queueFollowUp, .openModelPicker, .inspectChanges, .toggleFastMode,
+             .openPermissionModeMenu, .newChat, .archiveChat, .pinThread,
+             .forkThread, .openSideChat, .openTerminal:
+            return .sensitive
         }
     }
 }

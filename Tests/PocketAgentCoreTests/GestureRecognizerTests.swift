@@ -48,12 +48,12 @@ final class GestureRecognizerTests: XCTestCase {
 
     // MARK: - Chords (spec §6.2)
 
-    func testBPlusUpIsPermissionMode() {
-        assertChord(.up, resolvesTo: .cyclePermissionMode)
+    func testBPlusUpIsNewChat() {
+        assertChord(.up, resolvesTo: .newChat)
     }
 
-    func testBPlusDownIsFastMode() {
-        assertChord(.down, resolvesTo: .toggleFastMode)
+    func testBPlusDownIsOpenTerminal() {
+        assertChord(.down, resolvesTo: .openTerminal)
     }
 
     func testBPlusLeftIsModelPicker() {
