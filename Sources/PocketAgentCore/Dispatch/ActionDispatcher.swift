@@ -43,8 +43,8 @@ public final class ActionDispatcher: ActionDispatching {
 
         guard let recipe = support.recipe else {
             let reason = support.note ?? "not supported by \(profile.rawValue)"
+            // Dedicated hook only — the app logs it once, from there.
             onUnsupported?(action, reason)
-            onDiagnostic?("SKIP  \(action.rawValue): \(reason)")
             return
         }
 
@@ -55,7 +55,6 @@ public final class ActionDispatcher: ActionDispatching {
         guard decision.isAllowed else {
             if case .deny(let reason) = decision {
                 onDenied?(action, reason)
-                onDiagnostic?("DENY  \(action.rawValue): \(reason)")
             }
             return
         }
