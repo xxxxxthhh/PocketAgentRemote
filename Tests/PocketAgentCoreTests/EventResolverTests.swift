@@ -10,17 +10,17 @@ final class EventResolverTests: XCTestCase {
     }
 
     func testChordMappingTable() {
-        // Default map: the B layer switches between agents (see GestureBindings.default).
+        // Default map: two recent chats plus the three permanently useful commands.
         XCTAssertEqual(
             resolver.triggers(for: .gesture(.chord(modifier: .b, key: .up))), [.press(.goToRecentChat1)])
         XCTAssertEqual(
             resolver.triggers(for: .gesture(.chord(modifier: .b, key: .down))), [.press(.goToRecentChat2)])
         XCTAssertEqual(
-            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .left))), [.press(.goToRecentChat3)])
+            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .left))), [.press(.newChat)])
         XCTAssertEqual(
-            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .right))), [.press(.goToRecentChat4)])
+            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .right))), [.press(.nextChatNeedingAttention)])
         XCTAssertEqual(
-            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .a))), [.press(.nextChatNeedingAttention)])
+            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .a))), [.press(.inspectChanges)])
     }
 
     func testDefaultBLayerCoversEverySecondaryKey() {

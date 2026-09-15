@@ -56,16 +56,16 @@ final class GestureRecognizerTests: XCTestCase {
         assertChord(.down, resolvesTo: .goToRecentChat2)
     }
 
-    func testBPlusLeftJumpsToRecentChat3() {
-        assertChord(.left, resolvesTo: .goToRecentChat3)
+    func testBPlusLeftStartsANewChat() {
+        assertChord(.left, resolvesTo: .newChat)
     }
 
-    func testBPlusRightJumpsToRecentChat4() {
-        assertChord(.right, resolvesTo: .goToRecentChat4)
+    func testBPlusRightJumpsToTheChatNeedingAttention() {
+        assertChord(.right, resolvesTo: .nextChatNeedingAttention)
     }
 
-    func testBPlusAJumpsToTheChatNeedingAttention() {
-        assertChord(.a, resolvesTo: .nextChatNeedingAttention)
+    func testBPlusAInspectsChanges() {
+        assertChord(.a, resolvesTo: .inspectChanges)
     }
 
     func testChordDoesNotEmitEscape() {

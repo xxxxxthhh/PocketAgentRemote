@@ -12,13 +12,11 @@ public struct GestureBindings: Equatable, Sendable {
         self.bLayer = bLayer
     }
 
-    /// Default map. Base layer is universal navigation; the B layer is aimed at *switching between
-    /// agents*, which is the closest this six-input controller can get to the Codex Micro's six
-    /// agent keys (each of which jumps to one chat).
+    /// Default map. Base layer is universal navigation; the B layer mixes two things the user asked
+    /// for: jumping to the two most recent chats, and the three commands worth a permanent slot.
     ///
-    /// Chosen 2026-09-16 over the previous map (`newChat`/`openTerminal`/`openModelPicker`/
-    /// `queueFollowUp`/`inspectChanges`) because "which agent needs me" is the higher-value verb,
-    /// and `⌥⌘A` answers it in one gesture.
+    /// History: an all-chat-jump B layer (six slots) was tried first and rejected as too many
+    /// (2026-09-16) — two recent chats turned out to be the useful number.
     public static let `default` = GestureBindings(
         base: [
             .up: .navigateUp,
@@ -29,11 +27,11 @@ public struct GestureBindings: Equatable, Sendable {
             .b: .cancelOrInterrupt,
         ],
         bLayer: [
-            .up: .goToRecentChat1,             // ⌥⌘1
-            .down: .goToRecentChat2,           // ⌥⌘2
-            .left: .goToRecentChat3,           // ⌥⌘3
-            .right: .goToRecentChat4,          // ⌥⌘4
-            .a: .nextChatNeedingAttention,     // ⌥⌘A
+            .up: .goToRecentChat1,             // ⌥⌘1 — most recent chat
+            .down: .goToRecentChat2,           // ⌥⌘2 — second most recent
+            .left: .newChat,                   // ⌘N  — start a new agent task
+            .right: .nextChatNeedingAttention, // ⌥⌘A — whichever agent wants you
+            .a: .inspectChanges,               // ⌥⌘B — review the diff
         ]
     )
 }
