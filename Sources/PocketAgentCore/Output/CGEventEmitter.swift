@@ -1,6 +1,7 @@
 import ApplicationServices
 import CoreGraphics
 import Foundation
+import IOKit.hid
 
 /// Anything that can turn a `KeyStroke` into real input.
 public protocol InputEmitting: AnyObject {
@@ -13,95 +14,115 @@ public protocol InputEmitting: AnyObject {
     func releaseAll()
 }
 
-public enum InputEmitterError: Error, CustomStringConvertible {
-    case accessibilityNotGranted
+/// Posts one keyboard event. Injectable so the *sequence* the emitter produces can be asserted in
+/// tests without touching the real system.
+public protocol KeyboardEventPosting: AnyObject {
+    func post(keyCode: CGKeyCode, down: Bool, flags: CGEventFlags)
+}
 
-    public var description: String {
-        switch self {
-        case .accessibilityNotGranted:
-            return "Accessibility permission is required to synthesise keyboard events"
-        }
+public final class QuartzKeyboardEventPoster: KeyboardEventPosting {
+    public init() {}
+
+    public func post(keyCode: CGKeyCode, down: Bool, flags: CGEventFlags) {
+        guard let source = CGEventSource(stateID: .hidSystemState),
+              let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: down)
+        else { return }
+        event.flags = flags
+        event.post(tap: .cghidEventTap)
     }
 }
 
 /// Emits keyboard events via Quartz (spec §11).
 ///
-/// Two properties this type exists to guarantee:
+/// Three properties this type exists to guarantee:
 /// 1. **Serialisation.** Every recipe runs on one serial queue, so two chords can never interleave
 ///    their events (spec §11.3).
-/// 2. **No stuck modifiers.** Modifiers are pushed and popped around the key, and anything still
-///    held can be force-released by `releaseAll()` — including after a mid-recipe failure
-///    (spec §11.2, §17).
+/// 2. **Real modifier events.** A modified key is sent as
+///    `modifier down → key down → key up → modifier up`, not merely as an `event.flags` bitmask
+///    (spec §11.2). Measured 2026-09-16: setting flags alone was enough for `⌘N` but **not** for
+///    `⌃⇧M` — Codex ignored the latter until the Control key was genuinely pressed. Flags alone are
+///    a compatibility gamble; this order is what actually works.
+/// 3. **No stuck modifiers.** Anything still held can be force-released by `releaseAll()`, including
+///    after a mid-recipe failure.
 public final class CGEventEmitter: InputEmitting {
     private let queue: DispatchQueue
+    private let poster: KeyboardEventPosting
     private var heldModifiers: Set<ModifierKey> = []
     private var heldKeys: Set<CGKeyCode> = []
 
-    public init(queue: DispatchQueue = DispatchQueue(label: "com.pocketagentremote.emitter")) {
+    public convenience init(queue: DispatchQueue = DispatchQueue(label: "com.pocketagentremote.emitter")) {
+        self.init(queue: queue, poster: QuartzKeyboardEventPoster())
+    }
+
+    init(queue: DispatchQueue, poster: KeyboardEventPosting) {
         self.queue = queue
+        self.poster = poster
     }
 
     // MARK: - InputEmitting
 
     public func press(_ stroke: KeyStroke) {
-        queue.async {
-            self.perform {
-                self.postDown(stroke.key.keyCode, flags: self.flags(adding: stroke.modifiers))
-                self.postUp(stroke.key.keyCode, flags: self.flags(adding: stroke.modifiers))
-            }
-        }
+        queue.async { self.performPress(stroke) }
     }
 
     public func keyDown(_ stroke: KeyStroke) {
-        queue.async {
-            self.perform {
-                for modifier in stroke.modifiers.sorted(by: { $0.rawValue < $1.rawValue }) {
-                    self.pushModifier(modifier)
-                }
-                self.postDown(stroke.key.keyCode, flags: self.flags(adding: []))
-                self.heldKeys.insert(stroke.key.keyCode)
-            }
-        }
+        queue.async { self.performKeyDown(stroke) }
     }
 
     public func keyUp(_ stroke: KeyStroke) {
-        queue.async {
-            self.perform {
-                self.postUp(stroke.key.keyCode, flags: self.flags(adding: []))
-                self.heldKeys.remove(stroke.key.keyCode)
-                for modifier in stroke.modifiers.sorted(by: { $0.rawValue < $1.rawValue }) {
-                    self.popModifier(modifier)
-                }
-            }
-        }
+        queue.async { self.performKeyUp(stroke) }
     }
 
     public func releaseAll() {
-        queue.async {
-            let keys = self.heldKeys
-            let modifiers = self.heldModifiers
-            self.heldKeys.removeAll()
-            self.heldModifiers.removeAll()
-            for key in keys.sorted() { self.postUp(key, flags: []) }
-            for modifier in modifiers.sorted(by: { $0.rawValue < $1.rawValue }) {
-                self.postUp(modifier.keyCode, flags: [])
-            }
-        }
+        queue.async { self.performReleaseAll() }
+    }
+
+    // MARK: - Synchronous core (directly testable)
+
+    func performPress(_ stroke: KeyStroke) {
+        let modifiers = ordered(stroke.modifiers)
+        for modifier in modifiers { pushModifier(modifier) }
+        // The key event still carries the flags as well — some apps read one, some the other.
+        postDown(stroke.key.keyCode, flags: flags(adding: []))
+        postUp(stroke.key.keyCode, flags: flags(adding: []))
+        for modifier in modifiers.reversed() { popModifier(modifier) }
+        cleanupIfIdle()
+    }
+
+    func performKeyDown(_ stroke: KeyStroke) {
+        for modifier in ordered(stroke.modifiers) { pushModifier(modifier) }
+        postDown(stroke.key.keyCode, flags: flags(adding: []))
+        heldKeys.insert(stroke.key.keyCode)
+    }
+
+    func performKeyUp(_ stroke: KeyStroke) {
+        postUp(stroke.key.keyCode, flags: flags(adding: []))
+        heldKeys.remove(stroke.key.keyCode)
+        for modifier in ordered(stroke.modifiers).reversed() { popModifier(modifier) }
+        cleanupIfIdle()
+    }
+
+    func performReleaseAll() {
+        let keys = heldKeys
+        let modifiers = heldModifiers
+        heldKeys.removeAll()
+        heldModifiers.removeAll()
+        for key in keys.sorted() { postUp(key, flags: []) }
+        for modifier in ordered(modifiers) { postUp(modifier.keyCode, flags: []) }
     }
 
     // MARK: - Queue-confined state
 
-    /// Runs `body`, and on any failure still releases everything this emitter holds.
-    private func perform(_ body: () -> Void) {
-        body()
-        if !heldModifiers.isEmpty && heldKeys.isEmpty {
-            // Nothing is mid-recipe; a leftover modifier at this point is always a bug.
-            // Fail safe rather than leak a stuck Shift/Option into the user's session.
-            for modifier in heldModifiers.sorted(by: { $0.rawValue < $1.rawValue }) {
-                postUp(modifier.keyCode, flags: [])
-            }
-            heldModifiers.removeAll()
-        }
+    private func ordered(_ modifiers: Set<ModifierKey>) -> [ModifierKey] {
+        modifiers.sorted { $0.rawValue < $1.rawValue }
+    }
+
+    /// Nothing is mid-recipe; a leftover modifier at this point is always a bug, so fail safe
+    /// rather than leak a stuck Shift/Option into the user's session.
+    private func cleanupIfIdle() {
+        guard !heldModifiers.isEmpty && heldKeys.isEmpty else { return }
+        for modifier in ordered(heldModifiers) { postUp(modifier.keyCode, flags: []) }
+        heldModifiers.removeAll()
     }
 
     private func pushModifier(_ modifier: ModifierKey) {
@@ -127,19 +148,11 @@ public final class CGEventEmitter: InputEmitting {
     // MARK: - Quartz
 
     private func postDown(_ keyCode: CGKeyCode, flags: CGEventFlags) {
-        post(keyCode, down: true, flags: flags)
+        poster.post(keyCode: keyCode, down: true, flags: flags)
     }
 
     private func postUp(_ keyCode: CGKeyCode, flags: CGEventFlags) {
-        post(keyCode, down: false, flags: flags)
-    }
-
-    private func post(_ keyCode: CGKeyCode, down: Bool, flags: CGEventFlags) {
-        guard let source = CGEventSource(stateID: .hidSystemState),
-              let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: down)
-        else { return }
-        event.flags = flags
-        event.post(tap: .cghidEventTap)
+        poster.post(keyCode: keyCode, down: false, flags: flags)
     }
 }
 
