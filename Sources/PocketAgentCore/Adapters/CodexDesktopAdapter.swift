@@ -1,0 +1,67 @@
+import Foundation
+
+/// Codex desktop app (`com.openai.codex`).
+///
+/// Every key below was verified against the app's own command registry rather than assumed —
+/// see `docs/research-codex-micro-mapping.md` §2 and `docs/spec-v0.3.md` §6.2.
+///
+/// Two entries are deliberately **unsupported**, and the notes say why:
+/// - `openPermissionModeMenu`: the Codex desktop app has no permission-mode action at all (its
+///   registry only has `approval.approve` / `approval.decline`). Substituting an approval here
+///   would turn "switch mode" into "approve this command".
+/// - `toggleFastMode`: the command exists but ships **no default accelerator**, and it is not in
+///   the ⌘K command palette either. It needs a one-time user key binding, which the config can
+///   supply through `actionKeyOverrides`.
+public struct CodexDesktopAdapter: ToolAdapter {
+    public let profile: ToolProfile = .codex
+
+    /// Keys the user has bound manually in Codex's own Settings → Keyboard Shortcuts.
+    private let overrides: [AgentAction: KeyStroke]
+
+    public init(overrides: [AgentAction: KeyStroke] = [:]) {
+        self.overrides = overrides
+    }
+
+    public func support(for action: AgentAction) -> ActionSupport {
+        if let stroke = overrides[action] {
+            return .supported(OutputRecipe(
+                steps: [.keyPress(stroke)],
+                risk: action.risk,
+                requiresExplicitProfile: action.risk >= .sensitive,
+                allowsRepeat: action.allowsRepeat
+            ))
+        }
+
+        switch action {
+        case .navigateUp: return .supported(Recipe.held(.upArrow))
+        case .navigateDown: return .supported(Recipe.held(.downArrow))
+        case .navigateLeft: return .supported(Recipe.held(.leftArrow))
+        case .navigateRight: return .supported(Recipe.held(.rightArrow))
+
+        // approval.approve = Enter, approval.decline = Escape (registry)
+        case .submit: return .supported(Recipe.press(.enter))
+        case .cancelOrInterrupt: return .supported(Recipe.press(.escape))
+
+        // Reached through the same Enter path while a turn is running, gated by the app's own
+        // `followUpQueueMode` setting. `composer.queue` is a real command but has no default key.
+        case .queueFollowUp: return .supported(Recipe.press(.enter))
+
+        case .newChat: return .supported(Recipe.tool(.n, [.command]))
+        case .openTerminal: return .supported(Recipe.tool(.grave, [.control]))
+        case .openModelPicker: return .supported(Recipe.tool(.m, [.control, .shift]))
+        case .inspectChanges: return .supported(Recipe.tool(.g, [.control, .shift]))
+        case .archiveChat: return .supported(Recipe.tool(.a, [.command, .shift]))
+        case .pinThread: return .supported(Recipe.tool(.p, [.command, .option]))
+        case .openSideChat: return .supported(Recipe.tool(.s, [.command, .option]))
+
+        case .openPermissionModeMenu:
+            return .unsupported("Codex desktop has no permission-mode action (only approve/decline)")
+
+        case .toggleFastMode:
+            return .unsupported("no default accelerator and not in the command palette — bind a key in Codex, then set actionKeyOverrides")
+
+        case .forkThread:
+            return .unsupported("no default accelerator for split/fork — bind a key in Codex, then set actionKeyOverrides")
+        }
+    }
+}

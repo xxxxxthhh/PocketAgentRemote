@@ -1,0 +1,93 @@
+import Foundation
+
+/// Where semantic actions actually go out.
+///
+/// ```text
+/// ActionTrigger ─▶ adapter(profile) ─▶ OutputRecipe ─▶ ActionGuard ─▶ InputEmitting
+///                                            │
+///                                            └─▶ diagnostics (debug monitor)
+/// ```
+///
+/// Nothing is emitted without passing the guard, and every refusal is reported with a reason —
+/// silent no-ops are impossible to debug from a menu bar (spec §17).
+public final class ActionDispatcher: ActionDispatching {
+    public var onDiagnostic: ((String) -> Void)?
+    /// An action the active profile cannot perform, with the adapter's explanation.
+    public var onUnsupported: ((AgentAction, String) -> Void)?
+    /// An action the guard refused, with the reason.
+    public var onDenied: ((AgentAction, String) -> Void)?
+    /// An action that was actually sent.
+    public var onEmitted: ((AgentAction, KeyStroke) -> Void)?
+
+    private let configProvider: () -> AppConfig
+    private let frontmost: FrontmostAppProviding
+    private let emitter: InputEmitting
+
+    public init(
+        configProvider: @escaping () -> AppConfig,
+        frontmost: FrontmostAppProviding,
+        emitter: InputEmitting
+    ) {
+        self.configProvider = configProvider
+        self.frontmost = frontmost
+        self.emitter = emitter
+    }
+
+    public func dispatch(_ trigger: ActionTrigger) {
+        let config = configProvider()
+        let action = trigger.action
+        let profile = config.activeProfile
+
+        let adapter = AdapterCatalog.adapter(for: profile, overrides: config.overrides)
+        let support = adapter.support(for: action)
+
+        guard let recipe = support.recipe else {
+            let reason = support.note ?? "not supported by \(profile.rawValue)"
+            onUnsupported?(action, reason)
+            onDiagnostic?("SKIP  \(action.rawValue): \(reason)")
+            return
+        }
+
+        let frontmostBundleID = frontmost.frontmostBundleID()
+        let decision = ActionGuard(policy: config.guardPolicy)
+            .evaluate(recipe: recipe, profile: profile, frontmostBundleID: frontmostBundleID)
+
+        guard decision.isAllowed else {
+            if case .deny(let reason) = decision {
+                onDenied?(action, reason)
+                onDiagnostic?("DENY  \(action.rawValue): \(reason)")
+            }
+            return
+        }
+
+        guard let stroke = recipe.primaryStroke else {
+            onDiagnostic?("SKIP  \(action.rawValue): recipe has no keystroke")
+            return
+        }
+
+        switch trigger {
+        case .press: emitter.press(stroke)
+        case .down: emitter.keyDown(stroke)
+        case .up: emitter.keyUp(stroke)
+        }
+
+        let phase = { () -> String in
+            switch trigger {
+            case .press: return "press"
+            case .down: return "down "
+            case .up: return "up   "
+            }
+        }()
+        onEmitted?(action, stroke)
+        onDiagnostic?("SEND  \(phase) \(action.rawValue) → \(stroke.description) → \(frontmostBundleID ?? "?")")
+    }
+}
+
+extension KeyStroke: CustomStringConvertible {
+    public var description: String {
+        let prefix = modifiers.isEmpty
+            ? ""
+            : modifiers.map(\.rawValue).sorted().joined(separator: "+") + "+"
+        return prefix + key.rawValue
+    }
+}

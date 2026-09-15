@@ -32,7 +32,9 @@ public final class GestureRecognizer {
         case ready
     }
 
-    public let configuration: GestureConfiguration
+    /// Mutable so a config reload takes effect without relaunching the app. A change only affects
+    /// the *next* press; a gesture already in flight keeps the thresholds it started with.
+    public var configuration: GestureConfiguration
     public var emit: Emit?
 
     private let scheduler: GestureScheduler
