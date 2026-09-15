@@ -61,8 +61,34 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-if ! codesign --force --deep --sign - "$APP" 2>/dev/null; then
-	echo "warning: ad-hoc codesign failed; Accessibility grants may not persist across rebuilds" >&2
+# Signing identity matters for more than validation here.
+#
+# An **ad-hoc** signature ("-") changes its cdhash on every build, and macOS records Accessibility
+# grants against that hash — so every rebuild silently revokes the grant and the user has to
+# re-approve it in System Settings. Measured on 2026-09-16: three rebuilds, three re-grants.
+#
+# Signing with a real certificate makes the designated requirement
+# "identifier … and certificate leaf[subject.CN] = …", which is stable across rebuilds, so the grant
+# survives. We look for an Apple Development identity first and fall back to ad-hoc with a warning.
+IDENTITY="${POCKETAGENT_SIGN_IDENTITY:-}"
+if [ -z "$IDENTITY" ]; then
+	IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+		| awk -F'"' '/Apple Development/ {print $2; exit}')"
+fi
+
+if [ -n "$IDENTITY" ]; then
+	echo "signing with: $IDENTITY"
+	echo "  (stable identity — Accessibility grants survive rebuilds)"
+	if ! codesign --force --deep --sign "$IDENTITY" "$APP" 2>/dev/null; then
+		echo "warning: signing with '$IDENTITY' failed; falling back to ad-hoc" >&2
+		codesign --force --deep --sign - "$APP" 2>/dev/null || true
+	fi
+else
+	echo "warning: no code-signing identity found — falling back to ad-hoc." >&2
+	echo "         Accessibility must be re-approved after EVERY rebuild." >&2
+	echo "         Fix: create an 'Apple Development' certificate in Xcode, or set" >&2
+	echo "              POCKETAGENT_SIGN_IDENTITY=<identity>." >&2
+	codesign --force --deep --sign - "$APP" 2>/dev/null || true
 fi
 
 echo
