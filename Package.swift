@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .executable(name: "agentprobe", targets: ["AgentProbe"]),
         .executable(name: "coresmoke", targets: ["AgentCoreSmoke"]),
+        .executable(name: "pocketagent", targets: ["PocketAgentApp"]),
         .library(name: "PocketAgentCore", targets: ["PocketAgentCore"]),
     ],
     targets: [
@@ -43,6 +44,17 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("IOKit"),
+            ]
+        ),
+        // Phase 2+ : the menu bar app itself. Thin — all logic lives in PocketAgentCore.
+        .executableTarget(
+            name: "PocketAgentApp",
+            dependencies: ["PocketAgentCore"],
+            path: "Sources/PocketAgentApp",
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("ApplicationServices"),
             ]
         ),
         .testTarget(
