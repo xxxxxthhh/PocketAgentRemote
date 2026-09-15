@@ -115,3 +115,10 @@ tail -100 ~/Library/Application\ Support/PocketAgentRemote/debug.log
 
 日志里 `RAW` / `GESTURE` / `OUTPUT`（`SEND`|`SKIP`|`DENY`）四类标签足以定位问题出在哪一层。
 如果是「完全没反应」，重点看有没有 `RAW` —— 没有的话是手柄/输入源问题，有的话是适配层或权限问题。
+
+**如果菜单栏一直显示 "No controller connected"**，按这个顺序查：
+
+1. 手柄是否在 **C 档**？H 档（键盘模式）和 T 档都不在支持范围内 —— 菜单不会提示这一点，因为
+   那需要去读键盘类 HID 设备，代价是接收你的全部键盘输入（探针里能这么做，正式 App 里不做）。
+2. 手柄是否已配对并在蓝牙里显示为 `Xbox Wireless Controller` 或 `Wireless Controller`？
+3. 若是泛用变体，检查 **Input Monitoring** 是否为 `denied`。
