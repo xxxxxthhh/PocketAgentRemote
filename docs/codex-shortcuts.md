@@ -125,7 +125,7 @@ swift Tools/dump-menu-accelerators.swift ChatGPT
 
 ## 三、怎么绑到手柄
 
-### 现在能做的：改键（不改手势）
+### 改键（不改手势）
 
 `actionKeyOverrides` 让已有的**语义动作**改发任意按键：
 
@@ -135,12 +135,42 @@ swift Tools/dump-menu-accelerators.swift ChatGPT
 }
 ```
 
-改完菜单 → `Reload Config`。
+### 任意手势 → 任意命令（已实现）
 
-### 现在还做不到的：任意手势 → 任意命令
+`gestureKeyOverrides` **绕过语义动作词表**，手势标识符共 11 个：
 
-「手势 → 语义动作」是固定的 11 条，所以要用某条命令，得先占用一个已有语义动作。
-要真正自由，需要加一层 `gestureKeyOverrides`（手势 → 按键，绕过语义动作词表）—— **尚未实现**。
+```text
+基础层      up · down · left · right · a
+B 手势      b.tap · b.hold
+chord       b.up · b.down · b.left · b.right · b.a
+```
+
+```json
+"gestureKeyOverrides": {
+  "b.up":  { "key": "1", "modifiers": ["option", "command"] },
+  "b.tap": { "key": "b", "modifiers": ["command"] }
+}
+```
+
+改完菜单 → `Reload Config` 即生效，**不需要重新构建**。
+
+自定义绑定按工具专属动作处理：需要选定 profile + 前台 App 在白名单内。
+写错的手势标识符会被忽略并在日志里列出，不会导致配置解析失败。
+
+---
+
+## 四、当前的默认映射（2026-09-16 起）
+
+采用「会话跳转」形态，因为它是六键手柄能最接近 Codex Micro 的形态：
+
+| 手势 | 动作 | 键 |
+|---|---|---|
+| B + ↑ ↓ ← → | 跳到最近会话 1-4 | `⌥⌘1` … `⌥⌘4` |
+| B + A | 跳到需要我处理的会话 | `⌥⌘A` |
+
+被替换掉的（可用 `gestureKeyOverrides` 找回）：
+`新建会话` `⌘N` · `终端` `` ⌃` `` · `模型选择器` `⌃⇧M` ·
+`排队追问` `Enter` · `审阅面板` `⌥⌘B`。
 
 ---
 

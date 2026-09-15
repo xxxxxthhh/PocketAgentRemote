@@ -12,9 +12,13 @@ public struct GestureBindings: Equatable, Sendable {
         self.bLayer = bLayer
     }
 
-    /// v0.3 default map. Every entry is a *class A* action — one with a macOS default accelerator
-    /// in the Codex desktop app — so the whole map works with zero user configuration (Codex Micro
-    /// mapping research §2).
+    /// Default map. Base layer is universal navigation; the B layer is aimed at *switching between
+    /// agents*, which is the closest this six-input controller can get to the Codex Micro's six
+    /// agent keys (each of which jumps to one chat).
+    ///
+    /// Chosen 2026-09-16 over the previous map (`newChat`/`openTerminal`/`openModelPicker`/
+    /// `queueFollowUp`/`inspectChanges`) because "which agent needs me" is the higher-value verb,
+    /// and `⌥⌘A` answers it in one gesture.
     public static let `default` = GestureBindings(
         base: [
             .up: .navigateUp,
@@ -25,37 +29,118 @@ public struct GestureBindings: Equatable, Sendable {
             .b: .cancelOrInterrupt,
         ],
         bLayer: [
-            .up: .newChat,            // ⌘N
-            .down: .openTerminal,     // ⌃`
-            .left: .openModelPicker,  // ⌃⇧M  (works, but is not part of the Codex Micro action set)
-            .right: .queueFollowUp,   // Enter while a turn is running
-            .a: .inspectChanges,      // ⌘⇧G
+            .up: .goToRecentChat1,             // ⌥⌘1
+            .down: .goToRecentChat2,           // ⌥⌘2
+            .left: .goToRecentChat3,           // ⌥⌘3
+            .right: .goToRecentChat4,          // ⌥⌘4
+            .a: .nextChatNeedingAttention,     // ⌥⌘A
         ]
     )
 }
 
 /// The phase of an action, which the output layer needs in order to decide between a key press
 /// (one-shot) and a held key down/up pair (repeatable).
+public enum KeyPhase: Equatable, Sendable {
+    case press
+    case down
+    case up
+}
+
 public enum ActionTrigger: Equatable, Sendable {
     case press(AgentAction)
     case down(AgentAction)
     case up(AgentAction)
+    /// A keystroke bound straight to a gesture, bypassing the semantic vocabulary.
+    ///
+    /// Still goes through the guard: a raw key is by definition unclassified, so it is treated as
+    /// tool-specific and needs an explicit profile plus an allowlisted frontmost app.
+    case raw(KeyStroke, KeyPhase)
 
-    public var action: AgentAction {
+    /// Nil for `.raw` triggers, which have no semantic action.
+    public var action: AgentAction? {
         switch self {
         case .press(let action), .down(let action), .up(let action): return action
+        case .raw: return nil
+        }
+    }
+
+    public var phase: KeyPhase {
+        switch self {
+        case .press: return .press
+        case .down: return .down
+        case .up: return .up
+        case .raw(_, let phase): return phase
         }
     }
 }
 
+public extension ResolvedEvent {
+    var phase: KeyPhase {
+        switch self {
+        case .keyDown: return .down
+        case .keyUp: return .up
+        case .gesture: return .press
+        }
+    }
+}
+
+/// Stable, human-writable identifiers for gestures, used as configuration keys.
+///
+/// ```text
+/// up · down · left · right · a      base layer
+/// b.tap · b.hold                    B released as a tap / after the hold threshold
+/// b.up · b.down · b.left · b.right · b.a   chords
+/// ```
+public enum GestureID {
+    /// Buttons that can act as a layer modifier. Only B does — A is a plain action button.
+    public static let modifiers: [PhysicalButton] = [.b]
+
+    public static func of(_ event: ResolvedEvent) -> String {
+        switch event {
+        case .keyDown(let button), .keyUp(let button):
+            return button.rawValue
+        case .gesture(.tap(let button)):
+            return "\(button.rawValue).tap"
+        case .gesture(.hold(let button)):
+            return "\(button.rawValue).hold"
+        case .gesture(.chord(let modifier, let key)):
+            return "\(modifier.rawValue).\(key.rawValue)"
+        }
+    }
+
+    /// Every identifier the config may use — exactly the 11 gestures the hardware can produce.
+    /// Handy for validation and for documenting the config surface.
+    public static let all: [String] = {
+        var ids = PhysicalButton.allCases
+            .filter { !modifiers.contains($0) }
+            .map(\.rawValue)
+        for modifier in modifiers {
+            ids.append("\(modifier.rawValue).tap")
+            ids.append("\(modifier.rawValue).hold")
+            for key in PhysicalButton.allCases where key != modifier {
+                ids.append("\(modifier.rawValue).\(key.rawValue)")
+            }
+        }
+        return ids
+    }()
+}
+
 public struct EventResolver: Sendable {
     public let bindings: GestureBindings
+    /// Gesture identifier → keystroke. Takes precedence over the semantic binding for that gesture,
+    /// which is how a user can point any gesture at any command without touching code.
+    public let gestureOverrides: [String: KeyStroke]
 
-    public init(bindings: GestureBindings = .default) {
+    public init(bindings: GestureBindings = .default, gestureOverrides: [String: KeyStroke] = [:]) {
         self.bindings = bindings
+        self.gestureOverrides = gestureOverrides
     }
 
     public func triggers(for event: ResolvedEvent) -> [ActionTrigger] {
+        if let stroke = gestureOverrides[GestureID.of(event)] {
+            return [.raw(stroke, event.phase)]
+        }
+
         switch event {
         case .keyDown(let button):
             guard let action = bindings.base[button] else { return [] }

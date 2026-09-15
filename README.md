@@ -57,16 +57,23 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 | ↑ ↓ ← → | 导航 | 方向键（可长按重复） |
 | **A** | 提交 / **批准** | `Enter` |
 | **B 轻按** / **B 长按** | 取消 / **拒绝** | `Escape` |
-| **B + ↑** | 新建会话 | `⌘N` |
-| **B + ↓** | 打开终端面板 | `` ⌃` `` |
-| **B + ←** | 模型选择器 | `⌃⇧M` |
-| **B + →** | 排队追问 | `Enter`（运行中即入队） |
-| **B + A** | 查看变更 / 审阅 | `⌃⇧G` |
+| **B + ↑** | 跳到最近会话 1 | `⌥⌘1` |
+| **B + ↓** | 跳到最近会话 2 | `⌥⌘2` |
+| **B + ←** | 跳到最近会话 3 | `⌥⌘3` |
+| **B + →** | 跳到最近会话 4 | `⌥⌘4` |
+| **B + A** | 跳到**需要我处理**的会话 | `⌥⌘A` |
 
 > `A` / `B` 同时承担「批准 / 拒绝」，因为 Codex 和 Claude 的审批弹层用的就是 `Enter` / `Escape` ——
 > 最终的确认权始终留在 agent 自己的 UI 里。
 
 按住 `B` 不放可以连续触发多个 chord（类似按住 Shift 连按不同字母）。
+
+**B 层为什么是「会话跳转」**：手柄只有 11 个手势，而
+`⌥⌘1…6`（Go to recent chat）正是 Codex Micro 六个 agent 键的对等物 ——
+每个键跳到某个 agent 的会话。`⌥⌘A` 更进一步：一键跳到**正在等你处理**的那个会话
+（等审批 / 有未读）。这是我们能用六键手柄做到的、最接近 Micro 体验的形态。
+
+想换回「新建会话 / 终端 / 模型选择器」等，改配置即可，见下节。
 
 ---
 
@@ -82,13 +89,41 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
   "allowedBundleIDs": ["com.openai.codex", "com.anthropic.claudefordesktop", "..."],
   "actionKeyOverrides": {
     "toggleFastMode": { "key": "f", "modifiers": ["control", "option"] }
+  },
+  "gestureKeyOverrides": {
+    "b.up":  { "key": "1", "modifiers": ["option", "command"] },
+    "b.tap": { "key": "b", "modifiers": ["command"] }
   }
 }
 ```
 
-**`actionKeyOverrides` 是补齐「Codex 没有默认键位」的动作的方式。** 例如 fast mode：
-在 Codex 的 `Settings → Keyboard Shortcuts` 里给 Fast mode 绑一个键，然后把同一个键写进这里，
-我们的手柄就能触发它了。
+### `actionKeyOverrides` —— 改「某个动作发什么键」
+
+key 是语义动作名，value 是按键。用来补齐 Codex **没有默认键位**的动作：
+在 Codex 的 `Settings → Keyboard Shortcuts` 里给 Fast mode 绑一个键，
+再把同一个键写进这里，手柄就能触发它了。
+
+### `gestureKeyOverrides` —— 改「某个手势发什么键」
+
+**这一层绕过语义动作词表**，可以直接把任意手势指向任意按键，
+比如让 `B + A` 发 `⇧⎋`（Clear all unreads），而我们的动作表里根本没有这个动作。
+
+手势标识符（共 11 个，就是硬件能产生的全部）：
+
+```text
+基础层      up · down · left · right · a
+B 手势      b.tap · b.hold
+chord       b.up · b.down · b.left · b.right · b.a
+```
+
+按键名：`a`-`z`、`0`-`9`、`upArrow`/`downArrow`/`leftArrow`/`rightArrow`、
+`enter`/`escape`/`tab`/`space`、`minus`/`equal`/`comma`/`period`/`slash`/`grave` 等；
+修饰键 `command`/`option`/`control`/`shift`（`modifiers` 可省略）。
+
+> 自定义手势绑定**被视为工具专属动作**：需要在菜单里选定 profile，且前台 App 在白名单内才生效。
+> 这样才不会把 `⇧⎋` 之类打进不相干的窗口。
+>
+> 配置里写错的手势标识符**不会导致解析失败**，而是被忽略并在日志里列出来（`unrecognised gesture ids`）。
 
 ---
 

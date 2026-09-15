@@ -14,10 +14,10 @@ public final class ActionDispatcher: ActionDispatching {
     public var onDiagnostic: ((String) -> Void)?
     /// An action the active profile cannot perform, with the adapter's explanation.
     public var onUnsupported: ((AgentAction, String) -> Void)?
-    /// An action the guard refused, with the reason.
-    public var onDenied: ((AgentAction, String) -> Void)?
-    /// An action that was actually sent.
-    public var onEmitted: ((AgentAction, KeyStroke) -> Void)?
+    /// An action the guard refused, with the reason. Nil action = a raw gesture override.
+    public var onDenied: ((AgentAction?, String) -> Void)?
+    /// An action that was actually sent. Nil action = a raw gesture override.
+    public var onEmitted: ((AgentAction?, KeyStroke) -> Void)?
 
     private let configProvider: () -> AppConfig
     private let frontmost: FrontmostAppProviding
@@ -35,8 +35,41 @@ public final class ActionDispatcher: ActionDispatching {
 
     public func dispatch(_ trigger: ActionTrigger) {
         let config = configProvider()
-        let action = trigger.action
         let profile = config.activeProfile
+
+        // A gesture bound straight to a keystroke skips the adapter, but not the guard.
+        if case .raw(let stroke, let phase) = trigger {
+            let recipe = OutputRecipe(
+                steps: [.keyPress(stroke)],
+                risk: .sensitive,
+                requiresExplicitProfile: true,
+                allowsRepeat: false
+            )
+            let frontmostBundleID = frontmost.frontmostBundleID()
+            let decision = ActionGuard(policy: config.guardPolicy)
+                .evaluate(recipe: recipe, profile: profile, frontmostBundleID: frontmostBundleID)
+            guard decision.isAllowed else {
+                if case .deny(let reason) = decision { onDenied?(nil, reason) }
+                return
+            }
+            switch phase {
+            case .press: emitter.press(stroke)
+            case .down: emitter.keyDown(stroke)
+            case .up: emitter.keyUp(stroke)
+            }
+            onEmitted?(nil, stroke)
+            let label = { () -> String in
+                switch phase {
+                case .press: return "press"
+                case .down: return "down "
+                case .up: return "up   "
+                }
+            }()
+            onDiagnostic?("SEND  \(label) <gesture override> → \(stroke.description) → \(frontmostBundleID ?? "?")")
+            return
+        }
+
+        guard let action = trigger.action else { return }
 
         let adapter = AdapterCatalog.adapter(for: profile, overrides: config.overrides)
         let support = adapter.support(for: action)
@@ -68,6 +101,7 @@ public final class ActionDispatcher: ActionDispatching {
         case .press: emitter.press(stroke)
         case .down: emitter.keyDown(stroke)
         case .up: emitter.keyUp(stroke)
+        case .raw: break
         }
 
         let phase = { () -> String in
@@ -75,6 +109,7 @@ public final class ActionDispatcher: ActionDispatching {
             case .press: return "press"
             case .down: return "down "
             case .up: return "up   "
+            case .raw: return "raw  "
             }
         }()
         onEmitted?(action, stroke)

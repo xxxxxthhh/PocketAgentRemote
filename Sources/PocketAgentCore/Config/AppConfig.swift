@@ -21,6 +21,13 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// Settings → Keyboard Shortcuts and records the same key here.
     public var actionKeyOverrides: [String: KeyBinding]
 
+    /// Per-gesture keystroke overrides, keyed by gesture identifier (see `GestureID`).
+    ///
+    /// This goes further than `actionKeyOverrides`: it lets a gesture send a key that has no
+    /// semantic action at all, e.g. pointing `b.a` at `⇧⎋` (Clear all unreads). The semantic
+    /// vocabulary stays small while the reachable command set becomes the whole Codex shortcut list.
+    public var gestureKeyOverrides: [String: KeyBinding]
+
     public struct KeyBinding: Codable, Equatable, Sendable {
         public var key: Key
         public var modifiers: [ModifierKey]
@@ -28,6 +35,19 @@ public struct AppConfig: Codable, Equatable, Sendable {
         public init(key: Key, modifiers: [ModifierKey] = []) {
             self.key = key
             self.modifiers = modifiers
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case key, modifiers
+        }
+
+        /// `modifiers` is optional on purpose: writing `{ "key": "b" }` for an unmodified key is the
+        /// natural thing to do, and it must not fail the decode of the whole config. `key` stays
+        /// required — a binding without a key means nothing.
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            key = try container.decode(Key.self, forKey: .key)
+            modifiers = try container.decodeIfPresent([ModifierKey].self, forKey: .modifiers) ?? []
         }
 
         public var stroke: KeyStroke {
@@ -43,7 +63,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         macrosEnabled: Bool = false,
         requireAllowedFrontmostApp: Bool = true,
         allowedBundleIDs: [String] = AppConfig.defaultAllowedBundleIDs,
-        actionKeyOverrides: [String: KeyBinding] = [:]
+        actionKeyOverrides: [String: KeyBinding] = [:],
+        gestureKeyOverrides: [String: KeyBinding] = [:]
     ) {
         self.version = version
         self.activeProfile = activeProfile
@@ -53,6 +74,34 @@ public struct AppConfig: Codable, Equatable, Sendable {
         self.requireAllowedFrontmostApp = requireAllowedFrontmostApp
         self.allowedBundleIDs = allowedBundleIDs
         self.actionKeyOverrides = actionKeyOverrides
+        self.gestureKeyOverrides = gestureKeyOverrides
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version, activeProfile, tapMaxMs, holdMs
+        case macrosEnabled, requireAllowedFrontmostApp, allowedBundleIDs
+        case actionKeyOverrides, gestureKeyOverrides
+    }
+
+    /// Tolerant decoding: **every** field falls back to its default when absent.
+    ///
+    /// The synthesised decoder would reject any config written by an older build the moment a new
+    /// field is added — which, given this file is meant to be hand-edited, would mean silently
+    /// resetting the user's settings on upgrade. Missing keys must not be an error.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = AppConfig()
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? defaults.version
+        activeProfile = try container.decodeIfPresent(ToolProfile.self, forKey: .activeProfile) ?? defaults.activeProfile
+        tapMaxMs = try container.decodeIfPresent(Double.self, forKey: .tapMaxMs) ?? defaults.tapMaxMs
+        holdMs = try container.decodeIfPresent(Double.self, forKey: .holdMs) ?? defaults.holdMs
+        macrosEnabled = try container.decodeIfPresent(Bool.self, forKey: .macrosEnabled) ?? defaults.macrosEnabled
+        requireAllowedFrontmostApp = try container.decodeIfPresent(Bool.self, forKey: .requireAllowedFrontmostApp)
+            ?? defaults.requireAllowedFrontmostApp
+        allowedBundleIDs = try container.decodeIfPresent([String].self, forKey: .allowedBundleIDs)
+            ?? defaults.allowedBundleIDs
+        actionKeyOverrides = try container.decodeIfPresent([String: KeyBinding].self, forKey: .actionKeyOverrides) ?? [:]
+        gestureKeyOverrides = try container.decodeIfPresent([String: KeyBinding].self, forKey: .gestureKeyOverrides) ?? [:]
     }
 
     public static let currentVersion = 1
@@ -87,6 +136,24 @@ public struct AppConfig: Codable, Equatable, Sendable {
             result[action] = binding.stroke
         }
         return result
+    }
+
+    /// Gesture overrides with unknown identifiers dropped, so a typo degrades to "that one gesture
+    /// keeps its default" rather than silently doing nothing.
+    public var gestureOverrides: [String: KeyStroke] {
+        var result: [String: KeyStroke] = [:]
+        let known = Set(GestureID.all)
+        for (gesture, binding) in gestureKeyOverrides where known.contains(gesture) {
+            result[gesture] = binding.stroke
+        }
+        return result
+    }
+
+    /// Gesture identifiers the config used that we do not recognise — surfaced by the menu so a
+    /// typo is visible instead of silently ignored.
+    public var unknownGestureIDs: [String] {
+        let known = Set(GestureID.all)
+        return gestureKeyOverrides.keys.filter { !known.contains($0) }.sorted()
     }
 }
 

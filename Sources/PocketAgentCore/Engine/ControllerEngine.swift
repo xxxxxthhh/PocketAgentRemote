@@ -26,20 +26,28 @@ public final class ControllerEngine {
 
     public let recognizer: GestureRecognizer
 
+    /// Per-gesture keystroke overrides from config. Settable so a config reload takes effect without
+    /// relaunching.
+    public var gestureOverrides: [String: KeyStroke] {
+        get { resolver.gestureOverrides }
+        set { resolver = EventResolver(bindings: resolver.bindings, gestureOverrides: newValue) }
+    }
+
     private let coordinator: ControllerInputCoordinator
-    private let resolver: EventResolver
+    private var resolver: EventResolver
     private let dispatcher: ActionDispatching
     private var running = false
 
     public init(
         dispatcher: ActionDispatching,
         bindings: GestureBindings = .default,
+        gestureOverrides: [String: KeyStroke] = [:],
         configuration: GestureConfiguration = .default,
         scheduler: GestureScheduler = DispatchGestureScheduler(),
         coordinator: ControllerInputCoordinator = ControllerInputCoordinator()
     ) {
         self.dispatcher = dispatcher
-        self.resolver = EventResolver(bindings: bindings)
+        self.resolver = EventResolver(bindings: bindings, gestureOverrides: gestureOverrides)
         self.recognizer = GestureRecognizer(configuration: configuration, scheduler: scheduler)
         self.coordinator = coordinator
     }

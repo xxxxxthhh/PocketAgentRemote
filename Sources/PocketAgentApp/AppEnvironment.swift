@@ -46,6 +46,7 @@ final class AppEnvironment {
 
         engine = ControllerEngine(
             dispatcher: dispatcher,
+            gestureOverrides: config.gestureOverrides,
             configuration: config.gestureConfiguration
         )
 
@@ -79,7 +80,8 @@ final class AppEnvironment {
             self?.debugLog.append("SKIP", "\(action.rawValue): \(reason)")
         }
         dispatcher.onDenied = { [weak self] action, reason in
-            self?.debugLog.append("DENY", "\(action.rawValue): \(reason)")
+            let label = action?.rawValue ?? "<gesture override>"
+            self?.debugLog.append("DENY", "\(label): \(reason)")
         }
     }
 
@@ -133,9 +135,15 @@ final class AppEnvironment {
 
     func reloadConfig() {
         configStore.load()
-        // Pick up timing changes without a relaunch; the profile and guard are read per dispatch.
+        // Pick up timing and binding changes without a relaunch; the profile and guard are read
+        // per dispatch.
         engine.recognizer.configuration = configStore.config.gestureConfiguration
-        debugLog.append("APP", "config reloaded (tapMaxMs=\(configStore.config.tapMaxMs), holdMs=\(configStore.config.holdMs))")
+        engine.gestureOverrides = configStore.config.gestureOverrides
+        let unknown = configStore.config.unknownGestureIDs
+        if !unknown.isEmpty {
+            debugLog.append("APP", "unrecognised gesture ids in config (ignored): \(unknown.joined(separator: ", "))")
+        }
+        debugLog.append("APP", "config reloaded (tapMaxMs=\(configStore.config.tapMaxMs), holdMs=\(configStore.config.holdMs), gestureOverrides=\(configStore.config.gestureOverrides.count))")
         onStatusChange?()
     }
 

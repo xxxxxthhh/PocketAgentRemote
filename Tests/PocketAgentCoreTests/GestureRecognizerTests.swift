@@ -48,24 +48,24 @@ final class GestureRecognizerTests: XCTestCase {
 
     // MARK: - Chords (spec §6.2)
 
-    func testBPlusUpIsNewChat() {
-        assertChord(.up, resolvesTo: .newChat)
+    func testBPlusUpJumpsToRecentChat1() {
+        assertChord(.up, resolvesTo: .goToRecentChat1)
     }
 
-    func testBPlusDownIsOpenTerminal() {
-        assertChord(.down, resolvesTo: .openTerminal)
+    func testBPlusDownJumpsToRecentChat2() {
+        assertChord(.down, resolvesTo: .goToRecentChat2)
     }
 
-    func testBPlusLeftIsModelPicker() {
-        assertChord(.left, resolvesTo: .openModelPicker)
+    func testBPlusLeftJumpsToRecentChat3() {
+        assertChord(.left, resolvesTo: .goToRecentChat3)
     }
 
-    func testBPlusRightIsQueueFollowUp() {
-        assertChord(.right, resolvesTo: .queueFollowUp)
+    func testBPlusRightJumpsToRecentChat4() {
+        assertChord(.right, resolvesTo: .goToRecentChat4)
     }
 
-    func testBPlusAIsInspectChanges() {
-        assertChord(.a, resolvesTo: .inspectChanges)
+    func testBPlusAJumpsToTheChatNeedingAttention() {
+        assertChord(.a, resolvesTo: .nextChatNeedingAttention)
     }
 
     func testChordDoesNotEmitEscape() {

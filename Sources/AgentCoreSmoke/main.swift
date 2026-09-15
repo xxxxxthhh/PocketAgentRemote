@@ -68,6 +68,15 @@ func previewStroke(for action: AgentAction) -> KeyStroke? {
     case .openModelPicker: return KeyStroke(.m, modifiers: [.control, .shift])
     case .queueFollowUp: return .key(.enter)
     case .inspectChanges: return KeyStroke(.b, modifiers: [.command, .option])
+
+    case .goToRecentChat1: return KeyStroke(.digit1, modifiers: [.command, .option])
+    case .goToRecentChat2: return KeyStroke(.digit2, modifiers: [.command, .option])
+    case .goToRecentChat3: return KeyStroke(.digit3, modifiers: [.command, .option])
+    case .goToRecentChat4: return KeyStroke(.digit4, modifiers: [.command, .option])
+    case .goToRecentChat5: return KeyStroke(.digit5, modifiers: [.command, .option])
+    case .goToRecentChat6: return KeyStroke(.digit6, modifiers: [.command, .option])
+    case .nextChatNeedingAttention: return KeyStroke(.a, modifiers: [.command, .option])
+
     case .toggleFastMode, .openPermissionModeMenu, .archiveChat, .pinThread,
          .forkThread, .openSideChat:
         // Deliberately unbound in the default map: fast mode and the permission menu need a
@@ -81,33 +90,52 @@ func previewStroke(for action: AgentAction) -> KeyStroke? {
 final class SmokeDispatcher: ActionDispatching {
     private let emitter: InputEmitting?
     private(set) var counts: [AgentAction: Int] = [:]
+    private(set) var rawCount = 0
 
     init(emitter: InputEmitting?) {
         self.emitter = emitter
     }
 
     func dispatch(_ trigger: ActionTrigger) {
-        counts[trigger.action, default: 0] += 1
-
         let phase: String
-        switch trigger {
+        switch trigger.phase {
         case .press: phase = "press"
         case .down: phase = "down "
         case .up: phase = "up   "
         }
 
-        guard let stroke = previewStroke(for: trigger.action) else {
-            log("ACTION", "\(phase) \(trigger.action.rawValue)  → (unbound in default map, nothing sent)")
+        // A gesture bound straight to a keystroke.
+        if case .raw(let stroke, let phase) = trigger {
+            rawCount += 1
+            let label = { () -> String in
+                switch phase {
+                case .press: return "press"
+                case .down: return "down "
+                case .up: return "up   "
+                }
+            }()
+            log("ACTION", "\(label) <gesture override>  → \(stroke)")
+            guard let emitter else { return }
+            switch phase {
+            case .press: emitter.press(stroke)
+            case .down: emitter.keyDown(stroke)
+            case .up: emitter.keyUp(stroke)
+            }
             return
         }
 
-        let modifiers = stroke.modifiers.isEmpty
-            ? ""
-            : stroke.modifiers.map(\.rawValue).sorted().joined(separator: "+") + "+"
-        log("ACTION", "\(phase) \(trigger.action.rawValue)  → \(modifiers)\(stroke.key.rawValue)")
+        guard let action = trigger.action else { return }
+        counts[action, default: 0] += 1
+
+        guard let stroke = previewStroke(for: action) else {
+            log("ACTION", "\(phase) \(action.rawValue)  → (unbound in default map, nothing sent)")
+            return
+        }
+
+        log("ACTION", "\(phase) \(action.rawValue)  → \(stroke)")
 
         guard let emitter else { return }
-        switch trigger {
+        switch trigger.phase {
         case .press: emitter.press(stroke)
         case .down: emitter.keyDown(stroke)
         case .up: emitter.keyUp(stroke)

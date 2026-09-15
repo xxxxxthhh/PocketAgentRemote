@@ -60,6 +60,15 @@ public struct CodexDesktopAdapter: ToolAdapter {
         case .pinThread: return .supported(Recipe.tool(.p, [.command, .option]))
         case .openSideChat: return .supported(Recipe.tool(.s, [.command, .option]))
 
+        // "Go to recent chat N" — the desktop app's answer to the Codex Micro's six agent keys.
+        case .goToRecentChat1: return .supported(Recipe.tool(.digit1, [.command, .option]))
+        case .goToRecentChat2: return .supported(Recipe.tool(.digit2, [.command, .option]))
+        case .goToRecentChat3: return .supported(Recipe.tool(.digit3, [.command, .option]))
+        case .goToRecentChat4: return .supported(Recipe.tool(.digit4, [.command, .option]))
+        case .goToRecentChat5: return .supported(Recipe.tool(.digit5, [.command, .option]))
+        case .goToRecentChat6: return .supported(Recipe.tool(.digit6, [.command, .option]))
+        case .nextChatNeedingAttention: return .supported(Recipe.tool(.a, [.command, .option]))
+
         case .openPermissionModeMenu:
             return .unsupported("Codex desktop has no permission-mode action (only approve/decline)")
 

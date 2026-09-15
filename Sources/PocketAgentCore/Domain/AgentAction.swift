@@ -32,6 +32,23 @@ public enum AgentAction: String, Codable, CaseIterable, Sendable {
     case openSideChat
     case openTerminal
 
+    // MARK: Thread switching
+    //
+    // Codex binds "Go to recent chat N" to ⌥⌘1…⌥⌘6 — the closest thing the desktop app has to the
+    // Codex Micro's six agent keys, where each key jumps to one agent's chat. Six separate actions
+    // rather than an indexed one, because `AgentAction` is a plain string enum used as a
+    // configuration key.
+    case goToRecentChat1
+    case goToRecentChat2
+    case goToRecentChat3
+    case goToRecentChat4
+    case goToRecentChat5
+    case goToRecentChat6
+
+    /// Jumps to the chat that wants you: waiting on approval, or holding unread output. This is the
+    /// single most Micro-like command in the whole shortcut list.
+    case nextChatNeedingAttention
+
     // MARK: Modes and panels
     case openModelPicker
     case inspectChanges
@@ -117,7 +134,10 @@ public extension AgentAction {
         case .submit, .cancelOrInterrupt: return .normal
         case .queueFollowUp, .openModelPicker, .inspectChanges, .toggleFastMode,
              .openPermissionModeMenu, .newChat, .archiveChat, .pinThread,
-             .forkThread, .openSideChat, .openTerminal:
+             .forkThread, .openSideChat, .openTerminal,
+             .goToRecentChat1, .goToRecentChat2, .goToRecentChat3,
+             .goToRecentChat4, .goToRecentChat5, .goToRecentChat6,
+             .nextChatNeedingAttention:
             return .sensitive
         }
     }

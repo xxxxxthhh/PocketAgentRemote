@@ -45,7 +45,10 @@ public struct ClaudeDesktopAdapter: ToolAdapter {
         case .queueFollowUp:
             return .unsupported("Claude desktop has no queue action; ⌘⌥Enter forks a session instead")
 
-        case .newChat, .archiveChat, .pinThread, .forkThread, .openSideChat:
+        case .newChat, .archiveChat, .pinThread, .forkThread, .openSideChat,
+             .goToRecentChat1, .goToRecentChat2, .goToRecentChat3,
+             .goToRecentChat4, .goToRecentChat5, .goToRecentChat6,
+             .nextChatNeedingAttention:
             return .unsupported("not part of the researched Claude desktop surface — bind a key and set actionKeyOverrides")
         }
     }

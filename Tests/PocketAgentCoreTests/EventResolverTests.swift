@@ -10,16 +10,25 @@ final class EventResolverTests: XCTestCase {
     }
 
     func testChordMappingTable() {
+        // Default map: the B layer switches between agents (see GestureBindings.default).
         XCTAssertEqual(
-            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .up))), [.press(.newChat)])
+            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .up))), [.press(.goToRecentChat1)])
         XCTAssertEqual(
-            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .down))), [.press(.openTerminal)])
+            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .down))), [.press(.goToRecentChat2)])
         XCTAssertEqual(
-            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .left))), [.press(.openModelPicker)])
+            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .left))), [.press(.goToRecentChat3)])
         XCTAssertEqual(
-            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .right))), [.press(.queueFollowUp)])
+            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .right))), [.press(.goToRecentChat4)])
         XCTAssertEqual(
-            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .a))), [.press(.inspectChanges)])
+            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .a))), [.press(.nextChatNeedingAttention)])
+    }
+
+    func testDefaultBLayerCoversEverySecondaryKey() {
+        // Every key that can form a chord must appear in the default B layer, or a gesture would
+        // silently do nothing.
+        for key in PhysicalButton.allCases where key != .b {
+            XCTAssertNotNil(GestureBindings.default.bLayer[key], "B + \(key.rawValue) is unbound")
+        }
     }
 
     func testBaseLayerDirectionsMapToHeldActions() {
