@@ -19,9 +19,14 @@ open build/PocketAgentRemote.app        # 启动（菜单栏出现手柄图标�
 
 1. **点菜单栏的手柄图标 → `Request Accessibility Permission`**，在系统设置里勾选 PocketAgentRemote。
    （没有这个权限，按键会被系统丢弃 —— 菜单里会一直显示 `Accessibility: Required`。）
-2. **菜单里选 `Profile → Codex`**（或 Claude Code）。
+2. **菜单 → `Input Monitoring`**：如果你的手柄是**泛用变体**（蓝牙里显示为 `Wireless Controller`），
+   还需要授予 **Input Monitoring**。XInput 变体（`Xbox Wireless Controller`）不需要。
+   菜单里会显示当前状态；`denied` 时点它跳到系统设置。
+3. **菜单里选 `Profile → Codex`**（或 Claude Code）。
    *默认是 Generic Terminal，此时只有方向键／A／B 生效，B 层动作会被安全地跳过。*
-3. 手柄切到 **C 档**并连上，直接用。
+4. 手柄切到 **C 档**并连上，直接用。
+
+> ⚠️ **每次重新构建 App 后，两项授权都可能失效**（ad-hoc 签名变了），需要在系统设置里重新勾选。
 
 菜单栏图标：实心 = 手柄已连接。菜单里能实时看到当前 profile、前台 App、以及每类动作的结果。
 

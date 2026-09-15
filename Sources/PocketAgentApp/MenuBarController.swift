@@ -75,6 +75,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             menu.addItem(prompt)
         }
 
+        // Input Monitoring — only the generic C variant needs it, so it is reported but never nagged.
+        switch environment.inputMonitoringState {
+        case .granted:
+            menu.addItem(disabled("Input Monitoring: Granted"))
+        case .denied:
+            let item = NSMenuItem(title: "Input Monitoring: Denied — open Settings", action: #selector(openInputMonitoring), keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        case .unknown:
+            let item = NSMenuItem(title: "Input Monitoring: not determined (needed only for the generic C variant)", action: #selector(requestInputMonitoring), keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+
         // Safety switches
         let macros = NSMenuItem(title: "Macros", action: #selector(toggleMacros), keyEquivalent: "")
         macros.target = self
@@ -144,6 +158,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func requestAccessibility() {
         environment.requestAccessibility()
+    }
+
+    @objc private func requestInputMonitoring() {
+        environment.requestInputMonitoring()
+    }
+
+    @objc private func openInputMonitoring() {
+        environment.openInputMonitoringSettings()
     }
 
     @objc private func openMonitor() {

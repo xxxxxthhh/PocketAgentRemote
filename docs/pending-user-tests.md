@@ -14,7 +14,15 @@
       `Accessibility is NOT granted — keystrokes will be dropped by the OS`。
       ⚠️ 注意：**每次重新构建 App 后授权都可能失效**（ad-hoc 签名会变），需要重新勾选。
 
-- [ ] **2. 菜单里选 `Profile → Codex`**
+- [ ] **2. 授予 Input Monitoring 权限（只有泛用变体需要）**
+      **这是实测发现的坑**：打包成 App 后 `IOHIDCheckAccess` 返回 **denied**
+      （探针当初在终端里跑没有暴露这个问题，因为终端自己可能有权限）。
+      影响：手柄若是 `Wireless Controller`（泛用变体），App 会**完全收不到输入**；
+      若是 `Xbox Wireless Controller`（XInput 变体）则不受影响，因为它走 GameController。
+      操作：菜单 → `Input Monitoring: denied — open Settings` → 在系统设置里勾选。
+      验证：日志里 `Input Monitoring: granted`。
+
+- [ ] **3. 菜单里选 `Profile → Codex`**
       默认是 `Generic Terminal`，此时 B 层动作会被安全跳过（日志里是 `SKIP`），这是设计如此。
 
 ---

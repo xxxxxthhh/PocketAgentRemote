@@ -24,6 +24,7 @@ final class AppEnvironment {
 
     private(set) var connectedDevice: String?
     private(set) var isAccessibilityGranted: Bool
+    private(set) var inputMonitoringState: InputMonitoringPermission.State
 
     /// Called whenever anything the menu displays changes.
     var onStatusChange: (() -> Void)?
@@ -49,6 +50,7 @@ final class AppEnvironment {
         )
 
         isAccessibilityGranted = AccessibilityPermission.isGranted
+        inputMonitoringState = InputMonitoringPermission.state
 
         wire()
     }
@@ -99,6 +101,7 @@ final class AppEnvironment {
         if !isAccessibilityGranted {
             debugLog.append("APP", "Accessibility is NOT granted — keystrokes will be dropped by the OS")
         }
+        debugLog.append("APP", "Input Monitoring: \(inputMonitoringState.rawValue) — only the generic C variant needs it")
         engine.start()
     }
 
@@ -142,7 +145,19 @@ final class AppEnvironment {
             isAccessibilityGranted = granted
             debugLog.append("APP", "Accessibility → \(granted ? "granted" : "revoked")")
         }
+        inputMonitoringState = InputMonitoringPermission.state
         onStatusChange?()
+    }
+
+    func requestInputMonitoring() {
+        inputMonitoringState = InputMonitoringPermission.request()
+        debugLog.append("APP", "Input Monitoring → \(inputMonitoringState.rawValue)")
+        onStatusChange?()
+    }
+
+    func openInputMonitoringSettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!
+        NSWorkspace.shared.open(url)
     }
 
     func requestAccessibility() {

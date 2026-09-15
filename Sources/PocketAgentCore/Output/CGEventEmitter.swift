@@ -158,3 +158,37 @@ public enum AccessibilityPermission {
         return AXIsProcessTrustedWithOptions(options)
     }
 }
+
+/// HID access state.
+///
+/// This matters for exactly one thing: the **generic C variant** (`Wireless Controller`) is read
+/// through IOHIDManager, and macOS gates HID device access behind Input Monitoring. The XInput
+/// variant is unaffected because it goes through GameController instead. So a user whose controller
+/// happens to be in the generic variant can lose *all* input until this is granted — which is a
+/// confusing failure to debug without a state readout.
+public enum InputMonitoringPermission {
+    public enum State: String, Sendable {
+        case granted
+        case denied
+        case unknown
+    }
+
+    public static var state: State {
+        switch IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) {
+        case kIOHIDAccessTypeGranted: return .granted
+        case kIOHIDAccessTypeDenied: return .denied
+        default: return .unknown
+        }
+    }
+
+    public static var isGranted: Bool { state == .granted }
+
+    /// Shows the system prompt when the state is still `unknown`. Returns the state afterwards.
+    @discardableResult
+    public static func request() -> State {
+        if state == .unknown {
+            _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+        }
+        return state
+    }
+}
