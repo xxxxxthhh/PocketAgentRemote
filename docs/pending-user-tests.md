@@ -47,8 +47,13 @@
 
 **重点看两个容易出问题的：**
 
-- [ ] **`B + A`（查看变更）** —— 用的是 `⌃⇧G`（Control 不是 Command）。如果没反应，
-      说明 Codex 改了 `openReviewTab` 的键位，需要在 `commands.tsv` 那类地方重新核对。
+- [x] **`B + ↑`（新建会话）** —— ✅ 已验证（2026-09-16）
+- [x] **`B + ↓`（终端面板）** —— ✅ 已验证
+- [x] **`B + ←`（模型选择器）** —— ✅ 已验证
+- [x] **`B + A`（查看变更）** —— ✅ 已修正并验证：原用注册表的 `⌃⇧G` **无效**，
+      改为运行中菜单里的 `⌥⌘B`（`View > Toggle Review Panel`）。
+      **教训**：静态注册表 ≠ 运行时绑定。可用
+      `swift Tools/dump-menu-accelerators.swift ChatGPT` 导出真实键位（44 条）。
 - [ ] **`B + →`（排队追问）** —— Codex 是「运行中按 Enter 即入队」，依赖它自己的
       `followUpQueueMode` 设置。如果你机器上这个值不是 `queue`，行为会不同。
 

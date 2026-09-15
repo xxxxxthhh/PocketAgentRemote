@@ -3,7 +3,13 @@ import Foundation
 /// Codex desktop app (`com.openai.codex`).
 ///
 /// Every key below was verified against the app's own command registry rather than assumed —
-/// see `docs/research-codex-micro-mapping.md` §2 and `docs/spec-v0.3.md` §6.2.
+/// see `docs/research-codex-micro-mapping.md` §2 and `docs/spec-v0.3.md` §6.2 — **except where the
+/// live menu disagreed**, which happened once and is worth remembering:
+///
+/// `inspectChanges` is `⌥⌘B` (`View > Toggle Review Panel`, read from the running app with
+/// `Tools/dump-menu-accelerators.swift`), **not** `⌃⇧G`. The registry entry `openReviewTab` does
+/// carry `Ctrl+Shift+G`, but that command had no visible effect in the running app while the menu
+/// item works. A static registry is not the same thing as a live binding.
 ///
 /// Two entries are deliberately **unsupported**, and the notes say why:
 /// - `openPermissionModeMenu`: the Codex desktop app has no permission-mode action at all (its
@@ -49,7 +55,7 @@ public struct CodexDesktopAdapter: ToolAdapter {
         case .newChat: return .supported(Recipe.tool(.n, [.command]))
         case .openTerminal: return .supported(Recipe.tool(.grave, [.control]))
         case .openModelPicker: return .supported(Recipe.tool(.m, [.control, .shift]))
-        case .inspectChanges: return .supported(Recipe.tool(.g, [.control, .shift]))
+        case .inspectChanges: return .supported(Recipe.tool(.b, [.command, .option]))
         case .archiveChat: return .supported(Recipe.tool(.a, [.command, .shift]))
         case .pinThread: return .supported(Recipe.tool(.p, [.command, .option]))
         case .openSideChat: return .supported(Recipe.tool(.s, [.command, .option]))

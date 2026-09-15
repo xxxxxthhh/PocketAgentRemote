@@ -142,7 +142,12 @@ scripts/make-app.sh            构建探针 App
 
 ```bash
 swift build
-swift test                                  # 73 个测试
+swift test                                  # 82 个测试
 ./.build/debug/coresmoke --duration 60      # 真机看手势链路（只打日志）
 ./.build/debug/agentprobe watch             # 看原始 HID 报告
+swift Tools/dump-menu-accelerators.swift ChatGPT   # 导出 Codex 的真实菜单快捷键
 ```
+
+> **改键位前先跑最后那条命令。** Codex 的命令注册表里写的键位**不一定是运行时生效的** ——
+> `inspectChanges` 就因此错过一次：注册表的 `⌃⇧G` 毫无反应，菜单里实际绑的是 `⌥⌘B`。
+> 能从运行中菜单读到的，一律以菜单为准。

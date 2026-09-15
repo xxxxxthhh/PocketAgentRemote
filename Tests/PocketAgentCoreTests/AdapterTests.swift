@@ -42,19 +42,21 @@ final class AdapterTests: XCTestCase {
         XCTAssertEqual(stroke(codex, .newChat), KeyStroke(.n, modifiers: [.command]))
         XCTAssertEqual(stroke(codex, .openTerminal), KeyStroke(.grave, modifiers: [.control]))
         XCTAssertEqual(stroke(codex, .openModelPicker), KeyStroke(.m, modifiers: [.control, .shift]))
-        // openReviewTab is Control+Shift+G in the registry. Using ⌘ here would be wrong.
-        XCTAssertEqual(stroke(codex, .inspectChanges), KeyStroke(.g, modifiers: [.control, .shift]))
+        // View > Toggle Review Panel — read from the live menu, not from the static registry.
+        XCTAssertEqual(stroke(codex, .inspectChanges), KeyStroke(.b, modifiers: [.command, .option]))
         XCTAssertEqual(stroke(codex, .archiveChat), KeyStroke(.a, modifiers: [.command, .shift]))
         XCTAssertEqual(stroke(codex, .pinThread), KeyStroke(.p, modifiers: [.command, .option]))
         XCTAssertEqual(stroke(codex, .openSideChat), KeyStroke(.s, modifiers: [.command, .option]))
         XCTAssertEqual(stroke(codex, .queueFollowUp), .key(.enter))
     }
 
-    func testInspectChangesIsControlNotCommand() {
-        // Regression guard: this was transcribed as ⌘⇧G once, and the registry says otherwise.
+    func testInspectChangesMatchesTheLiveMenuNotTheRegistry() {
+        // Regression guard for a real bug: the registry said `openReviewTab = Ctrl+Shift+G`, but
+        // that combination did nothing in the running app while the View menu's
+        // "Toggle Review Panel" (⌥⌘B) worked. Static registry ≠ live binding.
         let stroke = stroke(codex, .inspectChanges)
-        XCTAssertTrue(stroke?.modifiers.contains(.control) ?? false)
-        XCTAssertFalse(stroke?.modifiers.contains(.command) ?? true)
+        XCTAssertEqual(stroke, KeyStroke(.b, modifiers: [.command, .option]))
+        XCTAssertNotEqual(stroke, KeyStroke(.g, modifiers: [.control, .shift]))
     }
 
     func testCodexUnsupportedActionsSayWhy() {

@@ -67,7 +67,7 @@ func previewStroke(for action: AgentAction) -> KeyStroke? {
     case .openTerminal: return KeyStroke(.grave, modifiers: [.control])
     case .openModelPicker: return KeyStroke(.m, modifiers: [.control, .shift])
     case .queueFollowUp: return .key(.enter)
-    case .inspectChanges: return KeyStroke(.g, modifiers: [.control, .shift])
+    case .inspectChanges: return KeyStroke(.b, modifiers: [.command, .option])
     case .toggleFastMode, .openPermissionModeMenu, .archiveChat, .pinThread,
          .forkThread, .openSideChat:
         // Deliberately unbound in the default map: fast mode and the permission menu need a

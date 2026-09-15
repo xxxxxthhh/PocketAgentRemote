@@ -480,13 +480,20 @@ function ne(e){return e.flatMap(e=>{let t=re(e.productId);
 | B + ↓ | `openTerminal` | `` ⌃` ``（`toggleTerminal`） | **A** | 实测验证（注册表默认键位） |
 | B + ← | `openModelPicker` | `⌃⇧M`（`composer.openModelPicker`） | **A** | 实测验证（注册表默认键位） |
 | B + → | `queueFollowUp` | 绑定：`composer.queue`（用户绑一次键，C 类）；天然路径：运行中 `Enter` | C + 隐式 | 实测验证（命令与处理器存在）/ 未验证（运行中 `Enter` 是否真排队，U5） |
-| B + A | `inspectChanges` | `⌃⇧G`（`openReviewTab`）/ `⌥⌘B`（`toggleSidePanel`） | **A** | 实测验证（注册表默认键位） |
+| B + A | `inspectChanges` | **`⌥⌘B`**（View > Toggle Review Panel） | **A** | 实测验证 2026-09-16：从**运行中 App 的菜单**读取并实操生效；本行原先并列的 `⌃⇧G` 已证伪 |
 
 三条必须写清的边界：
 
 1. **`openModelPicker` 不属于 Codex Micro 的语义集。** Micro 的 33 条动作清单里**没有** model picker，只有 `MIND+` / `MIND-`（`composer.increaseReasoningEffort` / `decreaseReasoningEffort`）调推理档。它在本项目里**可用**（`⌃⇧M` 是注册表实测默认键位），但**不能**说成「对齐了 Micro」。（来源: research-codex-micro-mapping.md §4.1 的「反向缺口」，实测验证）
 2. **`queueFollowUp` 是两种落地并存**：绑一次键（C 类，确定性）或依赖运行中 `Enter`（受 `[desktop] followUpQueueMode = "queue"` 控制，实测配置项存在但链路未验证）。**v0.2 把它当缺口是错的**（F4）。
 3. **`toggleFastMode` 与 `openPermissionModeMenu` 已退出默认绑定** —— 它们在 Codex 侧要么需要用户绑键（C 类），要么根本不存在。见 §6.3 / §6.5。
+
+4. **静态注册表 ≠ 运行时绑定（v0.3 实测教训）。** `inspectChanges` 一条踩过：注册表里
+   `openReviewTab` 写着 `Ctrl+Shift+G`，注入后**毫无反应**；而运行中 App 的
+   `View > Toggle Review Panel` 实际绑的是 `⌥⌘B`，一按就生效。
+   凡是可以从**运行中菜单**读到的键位，一律以菜单为准；用
+   `swift Tools/dump-menu-accelerators.swift ChatGPT` 可直接导出（44 条）。
+   其余无法从菜单读到的（如 `⌃⇧M` 模型选择器、`⌘N` 新建）才回退到注册表，且必须实测。
 
 ### 6.3 可选未绑定动作（v0.3 新增概念）
 
