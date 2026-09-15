@@ -57,6 +57,22 @@ final class Harness {
         emitted.compactMap { if case .gesture(let g) = $0 { return g } else { return nil } }
     }
 
+    /// Gestures that stand on their own. `chordReleased` is excluded because it exists only to end
+    /// a *held* binding (a modifier-only chord) — semantic actions are one-shot and ignore it.
+    var actionGestures: [ControllerGesture] {
+        gestures.filter {
+            if case .chordReleased = $0 { return false }
+            return true
+        }
+    }
+
+    var chordReleases: [ControllerGesture] {
+        gestures.filter {
+            if case .chordReleased = $0 { return true }
+            return false
+        }
+    }
+
     func press(_ button: PhysicalButton) {
         recognizer.handle(.pressed(button, timestamp: scheduler.now))
     }

@@ -78,7 +78,7 @@ final class GestureRecognizerTests: XCTestCase {
         harness.advance(to: 0.120)
         harness.release(.b)
 
-        XCTAssertEqual(harness.gestures, [.chord(modifier: .b, key: .up)])
+        XCTAssertEqual(harness.actionGestures, [.chord(modifier: .b, key: .up)])
         XCTAssertFalse(
             harness.emitted.contains(.gesture(.tap(.b))) || harness.emitted.contains(.gesture(.hold(.b))),
             "a chord must suppress B's own Escape"
@@ -113,7 +113,7 @@ final class GestureRecognizerTests: XCTestCase {
         harness.release(.a)
         harness.release(.up)
 
-        XCTAssertEqual(harness.gestures, [.chord(modifier: .b, key: .up)])
+        XCTAssertEqual(harness.actionGestures, [.chord(modifier: .b, key: .up)])
     }
 
     /// Verified on hardware 2026-09-16: holding B and tapping several directions in turn fires one
@@ -130,7 +130,7 @@ final class GestureRecognizerTests: XCTestCase {
         harness.release(.right)
         harness.release(.b)
 
-        XCTAssertEqual(harness.gestures, [
+        XCTAssertEqual(harness.actionGestures, [
             .chord(modifier: .b, key: .down),
             .chord(modifier: .b, key: .left),
             .chord(modifier: .b, key: .right),
@@ -222,6 +222,52 @@ final class GestureRecognizerTests: XCTestCase {
 
         harness.advance(to: 5.0)
         XCTAssertEqual(harness.gestures, [.chord(modifier: .b, key: .up)])
+    }
+
+    // MARK: - Chord release (held bindings only)
+
+    /// A held binding — e.g. `⌥⇧` for an input method's voice input — needs to know when the chord
+    /// ends. Semantic-action chords must ignore it, which is what keeps them one-shot.
+    func testReleasingTheChordKeyEmitsAChordRelease() {
+        let harness = Harness()
+        harness.press(.b)
+        harness.press(.a)
+        harness.release(.a)
+
+        XCTAssertEqual(harness.actionGestures, [.chord(modifier: .b, key: .a)])
+        XCTAssertEqual(harness.chordReleases, [.chordReleased(modifier: .b, key: .a)])
+    }
+
+    func testChordReleaseIsNotEmittedWhenThereWasNoChord() {
+        let harness = Harness()
+        harness.press(.a) // no B involved
+        harness.release(.a)
+        XCTAssertEqual(harness.chordReleases, [])
+    }
+
+    func testDisconnectMidChordReleasesTheHeldChord() {
+        // Otherwise a modifier-only binding stays held forever and the user's keyboard is stuck.
+        let harness = Harness()
+        harness.press(.b)
+        harness.press(.a)
+
+        let released = harness.recognizer.reset()
+
+        XCTAssertEqual(released, [.gesture(.chordReleased(modifier: .b, key: .a))])
+    }
+
+    func testDisconnectReleasesBothAHeldDirectionAndAHeldChord() {
+        let harness = Harness()
+        harness.press(.left)
+        harness.press(.b)
+        harness.press(.a)
+
+        let released = harness.recognizer.reset()
+
+        XCTAssertEqual(released, [
+            .gesture(.chordReleased(modifier: .b, key: .a)),
+            .keyUp(.left),
+        ])
     }
 
     // MARK: - Helpers

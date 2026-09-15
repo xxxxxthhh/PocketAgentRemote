@@ -76,10 +76,15 @@ public final class GestureRecognizer {
         holdToken?.cancel()
         holdToken = nil
         bState = .idle
-        chordKey = nil
         bConsumedByChord = false
 
         var output: [ResolvedEvent] = []
+        // A held (modifier-only) chord must be released too, or the user's session inherits a stuck
+        // Option+Shift when the controller disconnects mid-chord.
+        if let key = chordKey {
+            output.append(.gesture(.chordReleased(modifier: .b, key: key)))
+        }
+        chordKey = nil
         for direction in heldDirections.sorted(by: { $0.rawValue < $1.rawValue }) {
             output.append(.keyUp(direction))
         }
@@ -152,7 +157,7 @@ public final class GestureRecognizer {
 
         if chordKey == button {
             chordKey = nil
-            return []
+            return [.gesture(.chordReleased(modifier: .b, key: button))]
         }
 
         if heldDirections.contains(button) {

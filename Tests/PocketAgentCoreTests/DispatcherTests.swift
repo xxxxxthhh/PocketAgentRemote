@@ -108,6 +108,24 @@ final class DispatcherTests: XCTestCase {
         XCTAssertEqual(emitter.events, [.press(KeyStroke(.f, modifiers: [.control, .option]))])
     }
 
+    func testModifierOnlyOverrideFiresEvenWhenTheFrontmostAppIsNotAllowed() {
+        // Deliberate exception to the allowlist rule: a modifier-only stroke carries no command into
+        // any application, and the use case (an input method's voice input while typing anywhere)
+        // requires it to work globally.
+        let (dispatcher, emitter, _) = makeDispatcher(profile: .genericTerminal, frontmost: "com.apple.mail", allowed: [])
+        let held = KeyStroke(modifiers: [.option, .shift])
+        dispatcher.dispatch(.raw(held, .down))
+        dispatcher.dispatch(.raw(held, .up))
+
+        XCTAssertEqual(emitter.events, [.down(held), .up(held)])
+    }
+
+    func testKeyOverrideStillObeysTheAllowlist() {
+        let (dispatcher, emitter, _) = makeDispatcher(profile: .codex, frontmost: "com.apple.mail")
+        dispatcher.dispatch(.raw(KeyStroke(.b, modifiers: [.command]), .press))
+        XCTAssertTrue(emitter.events.isEmpty)
+    }
+
     func testEveryBoundActionEmitsExactlyOnce() {
         // The whole default gesture map must be reachable end to end.
         let (dispatcher, emitter, _) = makeDispatcher(profile: .codex)

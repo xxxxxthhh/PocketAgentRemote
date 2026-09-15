@@ -29,10 +29,12 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var gestureKeyOverrides: [String: KeyBinding]
 
     public struct KeyBinding: Codable, Equatable, Sendable {
-        public var key: Key
+        /// Nil means **modifiers only**, e.g. `{ "modifiers": ["option", "shift"] }` — a held
+        /// modifier chord with no character key.
+        public var key: Key?
         public var modifiers: [ModifierKey]
 
-        public init(key: Key, modifiers: [ModifierKey] = []) {
+        public init(key: Key? = nil, modifiers: [ModifierKey] = []) {
             self.key = key
             self.modifiers = modifiers
         }
@@ -41,17 +43,17 @@ public struct AppConfig: Codable, Equatable, Sendable {
             case key, modifiers
         }
 
-        /// `modifiers` is optional on purpose: writing `{ "key": "b" }` for an unmodified key is the
-        /// natural thing to do, and it must not fail the decode of the whole config. `key` stays
-        /// required — a binding without a key means nothing.
+        /// Both fields are optional on purpose: `{ "key": "b" }` (unmodified key) and
+        /// `{ "modifiers": ["option", "shift"] }` (modifiers only) are both natural to write, and
+        /// neither must fail the decode of the whole config.
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            key = try container.decode(Key.self, forKey: .key)
+            key = try container.decodeIfPresent(Key.self, forKey: .key)
             modifiers = try container.decodeIfPresent([ModifierKey].self, forKey: .modifiers) ?? []
         }
 
         public var stroke: KeyStroke {
-            KeyStroke(key, modifiers: Set(modifiers))
+            KeyStroke(key: key, modifiers: Set(modifiers))
         }
     }
 

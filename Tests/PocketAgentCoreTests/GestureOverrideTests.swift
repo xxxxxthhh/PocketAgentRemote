@@ -28,6 +28,30 @@ final class GestureOverrideTests: XCTestCase {
         XCTAssertEqual(resolver.triggers(for: .gesture(.hold(.b))), [.press(.cancelOrInterrupt)])
     }
 
+    func testModifierOnlyOverrideIsHeldForTheWholeChord() {
+        // The motivating case: holding ⌥⇧ to trigger an input method's voice input. A bare tap of
+        // ⌥⇧ with no key is invisible to almost everything, so it has to be held.
+        let held = KeyStroke(modifiers: [.option, .shift])
+        let resolver = EventResolver(gestureOverrides: ["b.a": held])
+
+        XCTAssertEqual(
+            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .a))),
+            [.raw(held, .down)]
+        )
+        XCTAssertEqual(
+            resolver.triggers(for: .gesture(.chordReleased(modifier: .b, key: .a))),
+            [.raw(held, .up)]
+        )
+    }
+
+    func testKeyOverrideStaysATapAndIgnoresTheRelease() {
+        let tap = KeyStroke(.b, modifiers: [.command])
+        let resolver = EventResolver(gestureOverrides: ["b.a": tap])
+
+        XCTAssertEqual(resolver.triggers(for: .gesture(.chord(modifier: .b, key: .a))), [.raw(tap, .press)])
+        XCTAssertEqual(resolver.triggers(for: .gesture(.chordReleased(modifier: .b, key: .a))), [])
+    }
+
     func testUnrelatedGesturesAreUnaffected() {
         let resolver = EventResolver(gestureOverrides: ["b.a": clearUnreads])
         XCTAssertEqual(resolver.triggers(for: .gesture(.chord(modifier: .b, key: .up))), [.press(.goToRecentChat1)])

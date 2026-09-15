@@ -183,6 +183,8 @@ func describe(_ event: ResolvedEvent) -> String {
     case .gesture(.tap(let button)): return "tap(\(button.rawValue))"
     case .gesture(.hold(let button)): return "hold(\(button.rawValue))"
     case .gesture(.chord(let modifier, let key)): return "chord(\(modifier.rawValue) + \(key.rawValue))"
+    case .gesture(.chordReleased(let modifier, let key)):
+        return "chordReleased(\(modifier.rawValue) + \(key.rawValue))"
     }
 }
 

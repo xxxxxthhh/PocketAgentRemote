@@ -53,6 +53,12 @@ public enum ControllerGesture: Equatable, Sendable {
     case hold(PhysicalButton)
     /// `modifier` was held while `key` went down. Fires exactly once per chord.
     case chord(modifier: PhysicalButton, key: PhysicalButton)
+    /// The chord's secondary key came back up (or the controller went away mid-chord).
+    ///
+    /// Only matters for bindings that have to be *held* — a modifier-only chord like `⌥⇧`, where
+    /// the release is what ends the gesture. Action bindings ignore it, which is what keeps a
+    /// chord's action a single one-shot press.
+    case chordReleased(modifier: PhysicalButton, key: PhysicalButton)
 }
 
 /// Output of the gesture engine, before semantic-action resolution.

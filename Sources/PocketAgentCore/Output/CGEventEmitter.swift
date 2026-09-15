@@ -82,22 +82,28 @@ public final class CGEventEmitter: InputEmitting {
     func performPress(_ stroke: KeyStroke) {
         let modifiers = ordered(stroke.modifiers)
         for modifier in modifiers { pushModifier(modifier) }
-        // The key event still carries the flags as well — some apps read one, some the other.
-        postDown(stroke.key.keyCode, flags: flags(adding: []))
-        postUp(stroke.key.keyCode, flags: flags(adding: []))
+        if let key = stroke.key {
+            // The key event still carries the flags as well — some apps read one, some the other.
+            postDown(key.keyCode, flags: flags(adding: []))
+            postUp(key.keyCode, flags: flags(adding: []))
+        }
         for modifier in modifiers.reversed() { popModifier(modifier) }
         cleanupIfIdle()
     }
 
     func performKeyDown(_ stroke: KeyStroke) {
         for modifier in ordered(stroke.modifiers) { pushModifier(modifier) }
-        postDown(stroke.key.keyCode, flags: flags(adding: []))
-        heldKeys.insert(stroke.key.keyCode)
+        if let key = stroke.key {
+            postDown(key.keyCode, flags: flags(adding: []))
+            heldKeys.insert(key.keyCode)
+        }
     }
 
     func performKeyUp(_ stroke: KeyStroke) {
-        postUp(stroke.key.keyCode, flags: flags(adding: []))
-        heldKeys.remove(stroke.key.keyCode)
+        if let key = stroke.key {
+            postUp(key.keyCode, flags: flags(adding: []))
+            heldKeys.remove(key.keyCode)
+        }
         for modifier in ordered(stroke.modifiers).reversed() { popModifier(modifier) }
         cleanupIfIdle()
     }

@@ -33,12 +33,39 @@ public final class ActionDispatcher: ActionDispatching {
         self.emitter = emitter
     }
 
+    private func emitRaw(_ stroke: KeyStroke, phase: KeyPhase, frontmostBundleID: String?) {
+        switch phase {
+        case .press: emitter.press(stroke)
+        case .down: emitter.keyDown(stroke)
+        case .up: emitter.keyUp(stroke)
+        }
+        onEmitted?(nil, stroke)
+        let label = { () -> String in
+            switch phase {
+            case .press: return "press"
+            case .down: return "down "
+            case .up: return "up   "
+            }
+        }()
+        onDiagnostic?("SEND  \(label) <gesture override> → \(stroke.description) → \(frontmostBundleID ?? "?")")
+    }
+
     public func dispatch(_ trigger: ActionTrigger) {
         let config = configProvider()
         let profile = config.activeProfile
 
         // A gesture bound straight to a keystroke skips the adapter, but not the guard.
         if case .raw(let stroke, let phase) = trigger {
+            if stroke.isHoldOnly {
+                // Modifier-only strokes are treated as **global**. They carry no command into any
+                // application — nothing is typed, only ⌥/⇧/⌃/⌘ are held — and the motivating use
+                // case (holding ⌥⇧ to trigger an input method's voice input) only works if it fires
+                // while the user is typing in *any* app. Requiring an allowlisted frontmost app
+                // would make it useless.
+                emitRaw(stroke, phase: phase, frontmostBundleID: frontmost.frontmostBundleID())
+                return
+            }
+
             let recipe = OutputRecipe(
                 steps: [.keyPress(stroke)],
                 risk: .sensitive,
@@ -52,20 +79,7 @@ public final class ActionDispatcher: ActionDispatching {
                 if case .deny(let reason) = decision { onDenied?(nil, reason) }
                 return
             }
-            switch phase {
-            case .press: emitter.press(stroke)
-            case .down: emitter.keyDown(stroke)
-            case .up: emitter.keyUp(stroke)
-            }
-            onEmitted?(nil, stroke)
-            let label = { () -> String in
-                switch phase {
-                case .press: return "press"
-                case .down: return "down "
-                case .up: return "up   "
-                }
-            }()
-            onDiagnostic?("SEND  \(label) <gesture override> → \(stroke.description) → \(frontmostBundleID ?? "?")")
+            emitRaw(stroke, phase: phase, frontmostBundleID: frontmostBundleID)
             return
         }
 
@@ -119,9 +133,11 @@ public final class ActionDispatcher: ActionDispatching {
 
 extension KeyStroke: CustomStringConvertible {
     public var description: String {
-        let prefix = modifiers.isEmpty
-            ? ""
-            : modifiers.map(\.rawValue).sorted().joined(separator: "+") + "+"
-        return prefix + key.rawValue
+        let prefix = modifiers.map(\.rawValue).sorted().joined(separator: "+")
+        guard let key else {
+            // Modifier-only strokes are held, so say so — otherwise a log line looks like a bug.
+            return prefix.isEmpty ? "<empty>" : prefix + " (held)"
+        }
+        return prefix.isEmpty ? key.rawValue : prefix + "+" + key.rawValue
     }
 }

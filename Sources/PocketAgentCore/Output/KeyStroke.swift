@@ -104,9 +104,14 @@ public enum Key: String, Codable, CaseIterable, Sendable {
     }
 }
 
-/// A key plus the modifiers held while it is pressed.
+/// A key plus the modifiers held while it is pressed — or, when `key` is nil, **modifiers alone**.
+///
+/// A modifier-only chord is a real thing (push-to-talk, sticky modifiers): nothing else is pressed,
+/// but the modifier keys themselves are held down. `CGEventEmitter` treats a modifier-only stroke as
+/// *held* rather than tapped, because a bare down-and-up of ⌥⇧ with no key is invisible to almost
+/// every application.
 public struct KeyStroke: Equatable, Hashable, Sendable {
-    public var key: Key
+    public var key: Key?
     public var modifiers: Set<ModifierKey>
 
     public init(_ key: Key, modifiers: Set<ModifierKey> = []) {
@@ -114,5 +119,23 @@ public struct KeyStroke: Equatable, Hashable, Sendable {
         self.modifiers = modifiers
     }
 
+    /// `key` may be nil, which means modifiers only.
+    public init(key: Key?, modifiers: Set<ModifierKey> = []) {
+        self.key = key
+        self.modifiers = modifiers
+    }
+
+    /// Modifiers only — no character key.
+    public init(modifiers: Set<ModifierKey>) {
+        self.key = nil
+        self.modifiers = modifiers
+    }
+
     public static func key(_ key: Key) -> KeyStroke { KeyStroke(key) }
+
+    public var isModifiersOnly: Bool { key == nil }
+
+    /// Whether this stroke can be expressed as a plain key press. Modifier-only strokes cannot:
+    /// they have to be held and released.
+    public var isHoldOnly: Bool { isModifiersOnly }
 }

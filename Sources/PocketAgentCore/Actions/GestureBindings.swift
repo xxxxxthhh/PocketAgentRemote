@@ -77,6 +77,7 @@ public extension ResolvedEvent {
         switch self {
         case .keyDown: return .down
         case .keyUp: return .up
+        case .gesture(.chordReleased): return .up
         case .gesture: return .press
         }
     }
@@ -101,7 +102,8 @@ public enum GestureID {
             return "\(button.rawValue).tap"
         case .gesture(.hold(let button)):
             return "\(button.rawValue).hold"
-        case .gesture(.chord(let modifier, let key)):
+        case .gesture(.chord(let modifier, let key)), .gesture(.chordReleased(let modifier, let key)):
+            // Start and end share one identifier, so a single override covers the whole gesture.
             return "\(modifier.rawValue).\(key.rawValue)"
         }
     }
@@ -136,7 +138,19 @@ public struct EventResolver: Sendable {
 
     public func triggers(for event: ResolvedEvent) -> [ActionTrigger] {
         if let stroke = gestureOverrides[GestureID.of(event)] {
-            return [.raw(stroke, event.phase)]
+            // A modifier-only binding has nothing to "press", so it is *held* for as long as the
+            // chord lasts: down when the chord starts, up when the secondary key is released.
+            // Anything with a key stays a one-shot press.
+            switch event {
+            case .gesture(.chord) where stroke.isHoldOnly:
+                return [.raw(stroke, .down)]
+            case .gesture(.chordReleased) where stroke.isHoldOnly:
+                return [.raw(stroke, .up)]
+            case .gesture(.chordReleased):
+                return []
+            default:
+                return [.raw(stroke, event.phase)]
+            }
         }
 
         switch event {
@@ -155,6 +169,10 @@ public struct EventResolver: Sendable {
         case .gesture(.chord(_, let key)):
             guard let action = bindings.bLayer[key] else { return [] }
             return [.press(action)]
+
+        case .gesture(.chordReleased):
+            // Semantic actions are one-shot; only held bindings care about the release.
+            return []
         }
     }
 
