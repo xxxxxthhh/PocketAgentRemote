@@ -100,8 +100,15 @@ final class AdapterTests: XCTestCase {
         for action in AgentAction.allCases where action != .navigateUp && action != .navigateDown
             && action != .navigateLeft && action != .navigateRight
             && action != .submit && action != .cancelOrInterrupt
-            && action != .focusOtherAgent {
+            && action != .focusOtherAgent && action != .openMenu {
             XCTAssertNil(generic.support(for: action).recipe, "\(action) must not fire from the generic profile")
+        }
+    }
+
+    func testMenuAndAgentSwitchAreAvailableOnEveryProfileAndCarryNoKeystroke() {
+        for adapter in [codex as ToolAdapter, claude, generic] {
+            XCTAssertEqual(adapter.support(for: .openMenu).recipe?.effect, .openMenu)
+            XCTAssertTrue(adapter.support(for: .openMenu).recipe?.steps.isEmpty ?? false)
         }
     }
 

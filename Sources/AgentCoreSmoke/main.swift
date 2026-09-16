@@ -83,9 +83,9 @@ func previewStroke(for action: AgentAction) -> KeyStroke? {
         // one-time user key binding, and the rest would need gestures we do not have.
         return nil
 
-    case .focusOtherAgent:
-        // Not a keystroke at all — it raises the other agent's window. Shown as nil here because
-        // this tool only previews keys.
+    case .focusOtherAgent, .openMenu:
+        // Not keystrokes at all — one raises the other agent's window, the other draws the menu.
+        // Shown as nil here because this tool only previews keys.
         return nil
     }
 }
@@ -103,6 +103,13 @@ final class SmokeDispatcher: ActionDispatching {
 
     /// Log-only tool: it holds no key state of its own, so there is nothing to forget.
     func releaseHeldStrokes() {}
+
+    /// Log-only tool: it has no on-screen menu, so it never consumes an event for one.
+    var openMenu: AgentMenu? { nil }
+    var onMenuChanged: ((AgentMenu?) -> Void)?
+    @discardableResult func openMenu(frontmostBundleID: String?) -> Bool { false }
+    func closeMenu() {}
+    func handleMenuEvent(_ event: InputEvent) -> MenuEventResult { .ignored }
 
     func dispatch(_ trigger: ActionTrigger) {
         let phase: String

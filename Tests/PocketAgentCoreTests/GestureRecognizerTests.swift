@@ -76,11 +76,33 @@ final class GestureRecognizerTests: XCTestCase {
         XCTAssertEqual(harness.actionGestures, [.chord(modifier: .b, key: .a)])
         XCTAssertFalse(
             harness.emitted.contains(.gesture(.hold(.b))),
-            "finishing a chord must not switch applications"
+            "a chord takes the press from B: the hold timer firing first must not still switch apps"
         )
         XCTAssertFalse(
             harness.emitted.contains(.gesture(.tap(.b))),
             "finishing a chord must not also send Escape"
+        )
+    }
+
+    func testPushToTalkWorksWhenBWasHeldWellPastTheThreshold() {
+        // Reconstructed from a real session (2026-09-16): the user holds B for ~840 ms and only then
+        // presses A — the natural push-to-talk grip, and the one they had been using all along.
+        // Once a hold meant "switch applications", the 450 ms timer fired long before A arrived, so
+        // every one of those attempts switched apps instead of starting voice input. The chord has to
+        // win over the hold timer, however long B has been down.
+        let harness = Harness()
+        harness.press(.b)
+        harness.advance(to: 0.840)          // hold timer fired at 0.450
+        harness.press(.a)
+        harness.advance(to: 0.900)
+        harness.release(.a)
+        harness.advance(to: 1.500)
+        harness.release(.b)
+
+        XCTAssertEqual(harness.actionGestures, [.chord(modifier: .b, key: .a)])
+        XCTAssertFalse(
+            harness.emitted.contains(.gesture(.hold(.b))),
+            "a long B press that becomes a chord must never also switch applications"
         )
     }
 
@@ -112,8 +134,10 @@ final class GestureRecognizerTests: XCTestCase {
         assertChord(.down, resolvesTo: .goToRecentChat2)
     }
 
-    func testBPlusLeftStartsANewChat() {
-        assertChord(.left, resolvesTo: .newChat)
+    func testBPlusLeftOpensTheMenu() {
+        // Changed 2026-09-16: 新建会话 moved into the menu, and this chord now opens it. The menu
+        // is how the gesture set stops being the ceiling on what the controller can reach.
+        assertChord(.left, resolvesTo: .openMenu)
     }
 
     func testBPlusRightJumpsToTheChatNeedingAttention() {

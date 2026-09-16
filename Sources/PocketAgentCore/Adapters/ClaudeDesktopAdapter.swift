@@ -42,13 +42,20 @@ public struct ClaudeDesktopAdapter: ToolAdapter {
         case .openPermissionModeMenu: return .supported(Recipe.tool(.m, [.command, .shift]))  // openModeMenu
         case .openTerminal: return .supported(Recipe.tool(.j, [.command]))             // Show Terminal
 
+        // Verified against the *live* menu on 2026-09-16 with `Tools/dump-menu-accelerators.swift`:
+        // `File > New Chat` is ⌘N. The earlier note that this surface was unverified was simply
+        // stale, and it mattered: the menu's first row is 新建会话, so without this mapping the
+        // menu built for Claude silently lost its most useful row.
+        case .newChat: return .supported(Recipe.tool(.n, [.command]))
+
         case .queueFollowUp:
             return .unsupported("Claude desktop has no queue action; ⌘⌥Enter forks a session instead")
 
         // Cross-app: sends nothing to Claude, so it works on every profile (see CodexDesktopAdapter).
         case .focusOtherAgent: return .supported(Recipe.system(.activateAgentApp))
+        case .openMenu: return .supported(Recipe.system(.openMenu, risk: .normal))
 
-        case .newChat, .archiveChat, .pinThread, .forkThread, .openSideChat,
+        case .archiveChat, .pinThread, .forkThread, .openSideChat,
              .goToRecentChat1, .goToRecentChat2, .goToRecentChat3,
              .goToRecentChat4, .goToRecentChat5, .goToRecentChat6,
              .nextChatNeedingAttention:

@@ -18,6 +18,11 @@ public final class ActionDispatcher: ActionDispatching {
     public var onDenied: ((AgentAction?, String) -> Void)?
     /// An action that was actually sent. Nil action = a raw gesture override.
     public var onEmitted: ((AgentAction?, KeyStroke) -> Void)?
+    /// The menu should be drawn (non-nil) or taken down (nil).
+    public var onMenuChanged: ((AgentMenu?) -> Void)?
+    /// Builds the menu for a bundle ID. Injected by the app so Core stays free of AppKit.
+    public var menuBuilder: ((String?) -> AgentMenu?)?
+
     /// A cross-app focus ran (successfully or not), with a human-readable outcome.
     ///
     /// Separate from `onEmitted` on purpose: focusing an app emits no keystroke, and reporting it as
@@ -45,6 +50,18 @@ public final class ActionDispatcher: ActionDispatching {
     private var heldByAction: [AgentAction: KeyStroke] = [:]
     private var heldRawStrokes: Set<KeyStroke> = []
 
+    /// The open menu, if any. While this is set the controller belongs to the menu (see
+    /// `handleMenuEvent`).
+    private var menuSession: MenuSession?
+    /// True only while a menu row is being run, so the run itself cannot open another menu.
+    private var isExecutingMenuItem = false
+
+    private struct MenuSession {
+        var menu: AgentMenu
+        /// The app the menu was built for. A choice is refused if focus has moved on since.
+        let bundleID: String?
+    }
+
     public init(
         configProvider: @escaping () -> AppConfig,
         frontmost: FrontmostAppProviding,
@@ -57,9 +74,115 @@ public final class ActionDispatcher: ActionDispatching {
         self.activator = activator
     }
 
+    // MARK: - On-screen menu
+
+    /// The menu currently on screen, if any.
+    ///
+    /// **This is the single source of truth for "is a menu open".** The engine and the app read it
+    /// rather than keeping their own flag: a second flag disagreed with this one once, and the
+    /// failure was subtle and bad — the engine thought a menu was up (so it stopped feeding the
+    /// recognizer) while this side had already dropped it, and the event was then passed on as a
+    /// normal keystroke, so ↑ moved the caret instead of the selection.
+    public var openMenu: AgentMenu? { menuSession?.menu }
+
+    /// Takes one raw controller event for the menu while it is open.
+    ///
+    /// This is deliberately *not* routed through the recognizer: the buttons are injected by this
+    /// process, so the overlay cannot receive them as key events, and letting the recognizer see them
+    /// would mean the ↑↓/A/B that drive the list also became arrow keys and Enter inside the chat
+    /// window behind it.
+    public func handleMenuEvent(_ event: InputEvent) -> MenuEventResult {
+        guard var session = menuSession else { return .ignored }
+        guard event.isPress else { return .handled }   // releases are ours, not the app's
+
+        switch event.button {
+        case .up:
+            session.menu.moveUp()
+        case .down:
+            session.menu.moveDown()
+        case .a:
+            menuSession = session
+            return executeSelectedMenuItem()
+        case .b:
+            menuSession = nil
+            onMenuChanged?(nil)
+            onDiagnostic?("MENU  closed by B")
+            return .dismissed
+        default:
+            // ←/→ have no meaning inside the menu; swallow them rather than let them fall through.
+            menuSession = session
+            return .handled
+        }
+
+        menuSession = session
+        onMenuChanged?(session.menu)
+        return .handled
+    }
+
+    /// Runs the highlighted row and closes the menu.
+    private func executeSelectedMenuItem() -> MenuEventResult {
+        guard let session = menuSession else { return .ignored }
+        guard let item = session.menu.selectedItem else {
+            menuSession = nil
+            onMenuChanged?(nil)
+            return .dismissed
+        }
+
+        // The menu was built for one app. If focus moved while it was up, running the row would send
+        // a keystroke to whatever is in front now — the exact mistake the menu exists to make
+        // visible, so refuse instead.
+        let currentBundleID = frontmost.frontmostBundleID()
+        guard currentBundleID == session.bundleID else {
+            menuSession = nil
+            onMenuChanged?(nil)
+            let reason = "frontmost app changed (\(session.bundleID ?? "unknown") → \(currentBundleID ?? "unknown")); menu item refused"
+            onDiagnostic?("DENY  \(item.action.rawValue): \(reason)")
+            return .refused(reason)
+        }
+
+        menuSession = nil
+        onMenuChanged?(nil)
+        onDiagnostic?("MENU  running \(item.action.rawValue) (\(item.title))")
+
+        // Run it with the menu out of the way, but through the normal pipeline so the guard still
+        // applies. `isExecutingMenuItem` stops a row from opening the menu again.
+        isExecutingMenuItem = true
+        dispatch(.press(item.action))
+        isExecutingMenuItem = false
+        return .executed(item.action)
+    }
+
     public func releaseHeldStrokes() {
         heldByAction.removeAll()
         heldRawStrokes.removeAll()
+    }
+
+    /// Opens the menu for the app in front. Returns false when there is nothing to show.
+    ///
+    /// The app calls this for the menu-bar entry point; the controller reaches it through the
+    /// `openMenu` action, which both routes end up in.
+    @discardableResult
+    public func openMenu(frontmostBundleID: String?) -> Bool {
+        guard menuSession == nil else {
+            onDiagnostic?("MENU  open ignored: a menu is already open")
+            return true
+        }
+        guard let menu = menuBuilder?(frontmostBundleID) else { return false }
+        menuSession = MenuSession(menu: menu, bundleID: frontmostBundleID)
+        onMenuChanged?(menu)
+        onDiagnostic?("MENU  opened for \(frontmostBundleID ?? "?") with \(menu.items.count) items")
+        return true
+    }
+
+    /// Takes the menu down without running anything.
+    ///
+    /// Called by the app when the overlay goes away for its own reasons (focus moved, controller
+    /// unplugged). It deliberately does **not** notify back: the overlay is already gone, and the
+    /// callback exists to keep the overlay in step with this state, not the other way round.
+    public func closeMenu() {
+        guard menuSession != nil else { return }
+        menuSession = nil
+        onMenuChanged?(nil)
     }
 
     /// Handles `focusOtherAgent`: resolve the target from the configured pair and raise it.
@@ -175,6 +298,18 @@ public final class ActionDispatcher: ActionDispatching {
         // the config names, and it sends them no input.
         if action.recipeEffect == .activateAgentApp {
             performFocus(action, frontmostBundleID: frontmostBundleID, config: config)
+            return
+        }
+
+        // Opening the menu is likewise a system effect, and it is global for the same reason: the
+        // menu is useful from wherever the user is, and it decides for itself whether there is an
+        // agent in front to act on. A row run from the menu must not re-open the menu it came from.
+        if action.recipeEffect == .openMenu {
+            guard !isExecutingMenuItem else { return }
+            guard openMenu(frontmostBundleID: frontmostBundleID) else {
+                onDiagnostic?("SKIP  openMenu: no agent in front (or no commands available for it)")
+                return
+            }
             return
         }
 

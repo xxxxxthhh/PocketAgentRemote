@@ -10,6 +10,23 @@ public protocol ActionDispatching: AnyObject {
     /// dispatcher's bookkeeping has to be dropped too, or a later stray release would key-up a
     /// stroke that was already released.
     func releaseHeldStrokes()
+
+    /// The menu on screen, if any. The single source of truth for "is a menu open".
+    var openMenu: AgentMenu? { get }
+    /// Menu to draw (non-nil) or take down (nil).
+    var onMenuChanged: ((AgentMenu?) -> Void)? { get set }
+    /// Opens the menu for an app; false when there is nothing to show for it.
+    @discardableResult
+    func openMenu(frontmostBundleID: String?) -> Bool
+    /// Takes the menu down without running anything.
+    func closeMenu()
+
+    /// Hand one raw controller event to the on-screen menu.
+    ///
+    /// While the menu is open it owns the whole controller: nothing goes to the recognizer, so the
+    /// ↑↓/A/B used to drive the list cannot also reach the chat window behind it. The result says
+    /// what the menu did with it, so the app can redraw or take the overlay down.
+    func handleMenuEvent(_ event: InputEvent) -> MenuEventResult
 }
 
 /// Wires the whole controller core together:
@@ -53,6 +70,20 @@ public final class ControllerEngine {
     /// The override table in force when the current chord started, kept until that chord releases.
     private var frozenOverrides: [String: GestureOverride]?
 
+    /// Supplies the frontmost bundle ID, so the menu can be built for the right app.
+    public var frontmost: FrontmostAppProviding?
+    /// Display name for the menu header when the config has no friendly name for the bundle ID.
+    public var frontmostNameProvider: (() -> String?)?
+
+    /// True only while a detach is being processed. See the `onEvent` handler: cleanup releases are
+    /// discarded here rather than by a general "nothing in flight" rule, which misfired on real input.
+    private var isDetaching = false
+
+    /// Whether the on-screen menu is up. Read from the dispatcher, which owns that state.
+    public var isMenuOpen: Bool { dispatcher.openMenu != nil }
+    /// Menu to draw (non-nil) or take down (nil). The app hangs its overlay here.
+    public var onMenuChanged: ((AgentMenu?) -> Void)?
+
     public init(
         dispatcher: ActionDispatching,
         bindings: GestureBindings = .default,
@@ -79,17 +110,56 @@ public final class ControllerEngine {
             }
         }
 
+        // The recognizer must not carry state across a menu. Two things make it stale: the menu is
+        // opened *by* a gesture (so that gesture is half-tracked), and while the menu is up the
+        // recognizer sees nothing, so a release during the menu is never delivered. Watching the
+        // menu state here covers every transition — opened by the controller, opened from the menu
+        // bar, closed by B, closed by running a row, closed because focus moved — which is what an
+        // earlier version got wrong by resetting on only some of those paths.
+        dispatcher.onMenuChanged = { [weak self] menu in
+            guard let self else { return }
+            if menu != nil { self.recognizer.resetAndEmit() }
+            self.onMenuChanged?(menu)
+        }
+
         coordinator.onEvent = { [weak self] event in
             guard let self else { return }
             self.onRawEvent?(event)
-            // A release with nothing in flight is not the end of a user gesture: it is cleanup a
-            // source invented for a device that has gone away. Recognising it would let a controller
-            // vanishing fire a B tap or hold — and a hold switches applications. This is the
-            // order-independent form of the guard (it does not care whether the synthetic release
-            // arrives before or after the detach), and it is why the HID source's cleanup cannot
-            // leak even if it runs late.
-            if !event.isPress && self.recognizer.hasNothingInFlight {
-                self.onDiagnostic?("DROPPED release with nothing held — device cleanup, not input")
+
+            // While a menu is up it owns the controller. This happens before the recognizer so the
+            // navigation keys cannot be turned into arrow keys and sent to the chat window — and so
+            // no chord or tap gesture can fire behind the overlay.
+            if self.isMenuOpen {
+                let wasOpen = true
+                let result = self.dispatcher.handleMenuEvent(event)
+                // Entering and leaving the menu are the moments the recognizer's view of the world
+                // goes stale: while the menu is up it receives nothing at all, so a release that
+                // happens during the menu never arrives. Resetting here is what stops the *next*
+                // press from being interpreted as part of a gesture that ended on screen.
+                if wasOpen && !self.isMenuOpen {
+                    self.recognizer.resetAndEmit()
+                }
+                if case .ignored = result {
+                    // The menu went away between the check and the hand-off. The event still belongs
+                    // to it — falling through to the recognizer here is what turned ↑ into a real
+                    // arrow key in the chat window.
+                    self.recognizer.resetAndEmit()
+                    self.onDiagnostic?("MENU  already closed; event swallowed")
+                }
+                return
+            }
+
+            // Cleanup a source invented for a disappearing device must not be recognised as a
+            // gesture — a B that was down would otherwise fire a tap or (worse) the app switch.
+            //
+            // Scoped to the detach itself, and deliberately *not* "any release with nothing in
+            // flight": real releases can arrive for a button whose state was just reset (the menu
+            // does exactly that), and swallowing one of those leaves the recognizer believing the
+            // button is still held. That is how an earlier version broke push-to-talk completely —
+            // A's release was dropped, `aIsDown` stayed true, and every later B press was ignored as
+            // "B while A is down".
+            if self.isDetaching, !event.isPress {
+                self.onDiagnostic?("DROPPED release during detach — device cleanup, not input")
                 return
             }
             self.syncGestureOverridesIfNeeded()
@@ -99,6 +169,11 @@ public final class ControllerEngine {
         // down, and a half-finished B press stays armed (spec §17, §18).
         coordinator.onDetach = { [weak self] name in
             guard let self else { return }
+            // Everything until this returns is teardown, not input: the HID source synthesises
+            // releases for whatever it thought was held, and those must not become gestures.
+            self.isDetaching = true
+            defer { self.isDetaching = false }
+            self.closeMenu()
             self.dispatcher.releaseHeldStrokes()
             self.recognizer.resetAndEmit()
             self.onControllerDetached?(name)
@@ -114,6 +189,27 @@ public final class ControllerEngine {
         guard running else { return }
         running = false
         coordinator.stop()
+        recognizer.resetAndEmit()
+    }
+
+    // MARK: - Menu
+
+    /// Opens the menu for the app in front, if it is one we have a profile for.
+    ///
+    /// The recognizer is reset first: opening the menu happens *because* of a gesture (B+←), and any
+    /// half-finished state from it must not survive into the menu, or a later release would be
+    /// interpreted as the tail of a gesture that is no longer being tracked.
+    @discardableResult
+    public func openMenu() -> Bool {
+        guard !isMenuOpen else { return true }
+        recognizer.resetAndEmit()
+        return dispatcher.openMenu(frontmostBundleID: frontmost?.frontmostBundleID())
+    }
+
+    /// Takes the menu down without running anything (screen-side close, controller gone).
+    public func closeMenu() {
+        guard isMenuOpen else { return }
+        dispatcher.closeMenu()
         recognizer.resetAndEmit()
     }
 

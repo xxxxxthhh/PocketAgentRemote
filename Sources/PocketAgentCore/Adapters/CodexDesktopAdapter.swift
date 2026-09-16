@@ -72,6 +72,7 @@ public struct CodexDesktopAdapter: ToolAdapter {
         // Cross-app: sends nothing to Codex. Supported here so a profile is never the reason the
         // user's "switch agent" button did nothing.
         case .focusOtherAgent: return .supported(Recipe.system(.activateAgentApp))
+        case .openMenu: return .supported(Recipe.system(.openMenu, risk: .normal))
 
         case .openPermissionModeMenu:
             return .unsupported("Codex desktop has no permission-mode action (only approve/decline)")

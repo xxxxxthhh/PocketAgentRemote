@@ -32,7 +32,7 @@ final class EventResolverTests: XCTestCase {
         XCTAssertEqual(
             resolver.triggers(for: .gesture(.chord(modifier: .b, key: .down))), [.press(.goToRecentChat2)])
         XCTAssertEqual(
-            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .left))), [.press(.newChat)])
+            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .left))), [.press(.openMenu)])
         XCTAssertEqual(
             resolver.triggers(for: .gesture(.chord(modifier: .b, key: .right))), [.press(.nextChatNeedingAttention)])
         XCTAssertEqual(

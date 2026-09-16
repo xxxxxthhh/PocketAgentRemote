@@ -22,9 +22,39 @@ final class EngineTests: XCTestCase {
     private final class RecordingDispatcher: ActionDispatching {
         private(set) var triggers: [ActionTrigger] = []
         private(set) var releaseHeldCalls = 0
+        /// When true, `handleMenuEvent` reports `.ignored`, simulating the menu having gone away for
+        /// a reason the engine was not told about.
+        var menuVetoesItself = false
+        /// Menu events the engine routed here while a menu was open.
+        private(set) var menuEvents: [InputEvent] = []
+        var menuResult: MenuEventResult = .handled
+
+        /// Minimal menu state, so engine routing can be tested without AppKit.
+        var openMenu: AgentMenu?
+        var menuBuilder: ((String?) -> AgentMenu?)?
+        var onMenuChanged: ((AgentMenu?) -> Void)?
 
         func dispatch(_ trigger: ActionTrigger) { triggers.append(trigger) }
         func releaseHeldStrokes() { releaseHeldCalls += 1 }
+        @discardableResult func openMenu(frontmostBundleID: String?) -> Bool {
+            guard let menu = menuBuilder?(frontmostBundleID) else { return false }
+            openMenu = menu
+            onMenuChanged?(menu)
+            return true
+        }
+        func closeMenu() {
+            openMenu = nil
+            onMenuChanged?(nil)
+        }
+        func handleMenuEvent(_ event: InputEvent) -> MenuEventResult {
+            if menuVetoesItself {
+                openMenu = nil          // the dispatcher drops it…
+                return .ignored         // …and says the event was never ours
+            }
+            guard openMenu != nil else { return .ignored }
+            menuEvents.append(event)
+            return menuResult
+        }
     }
 
     private func makeEngine() -> (ControllerEngine, RecordingDispatcher, FakeSource) {
@@ -96,6 +126,92 @@ final class EngineTests: XCTestCase {
         source.onEvent?(.released(.b, timestamp: 0.5))
 
         XCTAssertTrue(dispatcher.triggers.isEmpty, "a post-detach release must not switch applications")
+    }
+
+    func testAMenuOwnsTheControllerWhileItIsOpen() {
+        // The events are injected by this process, so anything not consumed here would land in the
+        // chat window as real arrow keys and Enter. This pins down that the recognizer never sees
+        // them: no gesture, no dispatch.
+        let (engine, dispatcher, source) = makeEngine()
+        defer { engine.stop() }
+        let menu = AgentMenu(bundleID: "com.openai.codex", title: "Codex", items: [
+            MenuItem(action: .newChat, title: "新建会话"),
+            MenuItem(action: .inspectChanges, title: "查看变更"),
+        ])
+        dispatcher.menuBuilder = { _ in menu }
+        engine.frontmost = FixedFrontmost("com.openai.codex")
+
+        XCTAssertTrue(engine.openMenu())
+        XCTAssertEqual(dispatcher.openMenu?.items.count, 2)
+        XCTAssertTrue(engine.isMenuOpen)
+
+        source.onEvent?(.pressed(.down, timestamp: 0))
+        source.onEvent?(.pressed(.a, timestamp: 0.1))
+
+        XCTAssertEqual(dispatcher.menuEvents.count, 2, "the menu sees the events")
+        XCTAssertTrue(dispatcher.triggers.isEmpty, "and the recognizer sees none of them")
+    }
+
+    func testAControllerDisconnectClosesTheMenu() {
+        let (engine, dispatcher, source) = makeEngine()
+        defer { engine.stop() }
+        dispatcher.menuBuilder = { bundleID in
+            AgentMenu(bundleID: bundleID, title: "Codex", items: [MenuItem(action: .newChat, title: "x")])
+        }
+        engine.frontmost = FixedFrontmost("com.openai.codex")
+        XCTAssertTrue(engine.openMenu())
+
+        source.onDetach?("Wireless Controller")
+
+        XCTAssertFalse(engine.isMenuOpen, "a menu whose controller is gone cannot be driven")
+    }
+
+    func testOpeningTheMenuResetsHalfFinishedGestureState() {
+        // The menu opens *because* of a gesture (B+←). If that gesture's state survived, its later
+        // release would be interpreted as the tail of something no longer being tracked.
+        let (engine, dispatcher, source) = makeEngine()
+        defer { engine.stop() }
+        dispatcher.menuBuilder = { bundleID in
+            AgentMenu(bundleID: bundleID, title: "Codex", items: [MenuItem(action: .newChat, title: "x")])
+        }
+        engine.frontmost = FixedFrontmost("com.openai.codex")
+
+        source.onEvent?(.pressed(.b, timestamp: 0))
+        XCTAssertTrue(engine.openMenu())
+        source.onEvent?(.released(.b, timestamp: 0.1))
+
+        XCTAssertTrue(dispatcher.triggers.isEmpty, "the B release must not fire a gesture")
+        XCTAssertEqual(dispatcher.menuEvents.count, 1)
+    }
+
+    func testAStaleMenuStateNeverLeaksAKeyToTheApp() {
+        // The regression behind "上下键没反应": the overlay closed the menu on its own, the dispatcher
+        // dropped the session, but the engine still believed a menu was up. The dispatcher then
+        // reported the event as not-ours and the engine passed it on, so ↑ went to Codex as a real
+        // arrow key — the caret moved instead of the selection. Either half of the fix catches it:
+        // the engine asks the dispatcher whether a menu is open, and it swallows an unclaimed event
+        // while it thought one was.
+        let (engine, dispatcher, source) = makeEngine()
+        defer { engine.stop() }
+        dispatcher.menuBuilder = { bundleID in
+            AgentMenu(bundleID: bundleID, title: "Codex", items: [MenuItem(action: .newChat, title: "x")])
+        }
+        engine.frontmost = FixedFrontmost("com.openai.codex")
+        XCTAssertTrue(engine.openMenu())
+
+        dispatcher.menuVetoesItself = true
+        source.onEvent?(.pressed(.down, timestamp: 0))
+
+        XCTAssertTrue(
+            dispatcher.triggers.isEmpty,
+            "a navigation key must never reach the app because the menu state was stale"
+        )
+    }
+
+    private final class FixedFrontmost: FrontmostAppProviding {
+        var bundleID: String?
+        init(_ bundleID: String?) { self.bundleID = bundleID }
+        func frontmostBundleID() -> String? { bundleID }
     }
 
     func testARealGestureStillReachesTheDispatcher() {

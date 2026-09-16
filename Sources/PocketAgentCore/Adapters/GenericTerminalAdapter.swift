@@ -19,6 +19,7 @@ public struct GenericTerminalAdapter: ToolAdapter {
         case .cancelOrInterrupt: return .supported(Recipe.press(.escape))
         // Not keystrokes, so the "no tool chord from the generic profile" rule does not apply.
         case .focusOtherAgent: return .supported(Recipe.system(.activateAgentApp))
+        case .openMenu: return .supported(Recipe.system(.openMenu, risk: .normal))
         default:
             return .unsupported("tool-specific action — select a profile first")
         }

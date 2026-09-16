@@ -165,6 +165,45 @@ FOCUS  focusOtherAgent: focused com.anthropic.claudefordesktop via appleScript i
 
 ---
 
+## J. 手柄菜单（`B+←`）—— 已验证 ✅（2026-09-16）
+
+代码、单测、真实窗口冒烟（不抢焦点/可见/切 App 自动关闭）与**手柄实机**均已通过。
+调试过程中在这里踩到并修掉了 3 个真问题（见 `docs/HANDOFF.md` §7 第 19–21 条）：
+push-to-talk 被长按定时器抢先、兜底守卫吃掉真实松开导致 B 被永久忽略、菜单开合未复位识别器。
+
+准备：焦点在 Codex 或 Claude（菜单只在 agent 前台时才有内容），然后重建启动 App：
+
+```bash
+POCKETAGENT_SWIFTPM_FLAGS=--disable-sandbox ./scripts/make-agent-app.sh release
+open build/PocketAgentRemote.app
+```
+
+| # | 操作 | 期望 | 结果 |
+|---|---|---|---|
+| 1 | 菜单栏 → `Show Controller Menu` | 浮层出现在屏幕偏下位置，标题是 Codex/Claude，第一项是「新建会话」 | |
+| 2 | 焦点在 Codex，按 `B+←` | 浮层出现 | |
+| 3 | **松开 B**，等 1 秒 | 浮层仍然在（不用一直捏着） | |
+| 4 | 连按 `↓` | 选中项上下移动，到底部回到顶部 | |
+| 5 | 选中「查看变更」后按 `A` | 浮层消失，Codex 打开审阅面板 | |
+| 6 | 再按 `B+←`，然后按 `B` | 浮层消失，**聊天窗口没有反应**（不会发出取消/拒绝） | |
+| 7 | 浮层打开时，**鼠标点一下别的 App** | 浮层自动消失 | |
+| 8 | 浮层打开时在 Claude 里做同样操作 | 显示的是 Claude 的操作，新建会话可用（`⌘N`） | |
+| 9 | 浮层打开时按 `B+A`（语音） | 语音输入**照常工作**（说明浮层没抢焦点） | |
+| 10 | 离屏幕 2–3 米看浮层 | 字够大、能看清选中项 | |
+
+日志里应能看到：
+
+```text
+MENU  opened for com.openai.codex with 5 items
+MENU  running inspectChanges (查看变更)
+MENU  closed by B
+```
+
+**如果第 1 项就失败**（菜单栏点了没反应）：说明前台不是 Codex/Claude，日志会有
+`SKIP openMenu: no agent in front`。
+
+---
+
 ## H. 语音输入（B + A）—— 已验证 ✅
 
 2026-09-16 实测通过。用的是配置里的修饰键手势，不是内置语义动作。

@@ -23,6 +23,8 @@ final class AppEnvironment {
     private(set) var dispatcher: ActionDispatcher
     /// Raises one of the two agent apps. Also used by the menu's manual smoke action.
     let activator: AppActivator
+    /// The on-screen menu the controller can drive.
+    let overlay: MenuOverlayController
 
     private(set) var connectedDevice: String?
     private(set) var isAccessibilityGranted: Bool
@@ -37,20 +39,25 @@ final class AppEnvironment {
     init() {
         configStore = ConfigStore()
         let config = configStore.load()
+        AppEnvironment.adoptMenuChordIfNeeded(store: configStore)
 
         let emitter = CGEventEmitter()
         let observer = frontmostObserver
         let activator = AppActivator(frontmost: observer)
         self.activator = activator
 
+        let overlay = MenuOverlayController(frontmost: observer)
+        self.overlay = overlay
+
         // The dispatcher reads config live, so profile/allowlist changes take effect immediately.
         let store = configStore
-        dispatcher = ActionDispatcher(
+        let dispatcher = ActionDispatcher(
             configProvider: { store.config },
             frontmost: observer,
             emitter: emitter,
             activator: activator
         )
+        self.dispatcher = dispatcher
 
         engine = ControllerEngine(
             dispatcher: dispatcher,
@@ -62,6 +69,21 @@ final class AppEnvironment {
         inputMonitoringState = InputMonitoringPermission.state
 
         wire()
+    }
+
+    /// One-time: a per-profile `b.left` override written before 2026-09-16 still wins over the new
+    /// default, which would leave that profile unable to open the menu at all. Change it once, keep a
+    /// backup, and say so in the log — never silently.
+    private static func adoptMenuChordIfNeeded(store: ConfigStore) {
+        var probe = store.config
+        guard ConfigMigrations.adoptMenuChord(&probe) else { return }
+        // Back up before touching anything, so the hand-written original always exists.
+        let backup = store.backUp()
+        let outcome = store.update { config in
+            ConfigMigrations.adoptMenuChord(&config)
+        }
+        let place = backup.map { "backup: \($0.lastPathComponent)" } ?? "no backup could be written"
+        NSLog("PocketAgentRemote: removed a stale b.left override so B+← opens the menu (\(place), save=\(outcome))")
     }
 
     private func wire() {
@@ -100,6 +122,38 @@ final class AppEnvironment {
             self.onStatusChange?()
         }
 
+        // The menu is built from the adapter of whatever is in front, so it only ever offers rows
+        // that can actually run (and shows the matching app's name in its header).
+        dispatcher.menuBuilder = { [weak self] bundleID in
+            guard let self else { return nil }
+            return AgentMenuBuilder.menu(
+                for: self.configStore.config,
+                frontmostBundleID: bundleID,
+                frontmostName: self.frontmostObserver.frontmostAppName()
+            )
+        }
+        engine.onMenuChanged = { [weak self] menu in
+            guard let self else { return }
+            if let menu {
+                self.debugLog.append("MENU", "open for \(menu.title): \(menu.items.map(\.title).joined(separator: " / "))")
+                self.overlay.show(menu)
+            } else {
+                self.overlay.hide()
+            }
+            self.onStatusChange?()
+        }
+        // The overlay can go away on its own (focus moved, controller gone). Tell the engine, which
+        // owns the gesture side of the menu: it closes the dispatcher's session *and* resets the
+        // recognizer. Doing only the first half once left the two disagreeing, and an ↑ then went
+        // through as a real arrow key instead of moving the selection.
+        overlay.onDismiss = { [weak self] in
+            guard let self else { return }
+            guard self.engine.isMenuOpen else { return }
+            self.engine.closeMenu()
+            self.debugLog.append("MENU", "closed")
+            self.onStatusChange?()
+        }
+
         // In auto mode the profile follows the frontmost app, so the gesture table is re-resolved
         // before every event.
         engine.gestureOverridesProvider = { [weak self] in
@@ -133,6 +187,7 @@ final class AppEnvironment {
 
     func stop() {
         engine.stop()
+        overlay.hide()
     }
 
     // MARK: - Menu actions
@@ -154,6 +209,15 @@ final class AppEnvironment {
         debugLog.append("FOCUS", "manual: \(lastActivationSummary ?? "")")
         onStatusChange?()
         return outcome
+    }
+
+    /// True while the on-screen menu is up.
+    var isMenuVisible: Bool { overlay.isVisible }
+
+    /// Opens the controller's menu from the menu bar — the same code path as `B+←`, for when the
+    /// controller is not in hand.
+    func showControllerMenu() {
+        engine.openMenu()
     }
 
     /// The profile in force right now — in auto mode this follows the frontmost application.

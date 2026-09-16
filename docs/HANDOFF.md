@@ -1,7 +1,7 @@
 # 交接文档：当前完整状态
 
 > 生成于 2026-09-16 · 27 个 commit · 5413 行 Swift · 111 个单测全绿
-> **2026-09-16 更新**：新增「切到另一个 agent」（`B 长按`）· 审查后修复 6 项 · 146 个单测全绿
+> **2026-09-16 更新**：新增「切到另一个 agent」（`B 长按`）· 审查后修复 6 项 · 新增手柄菜单 · 171 个单测全绿
 > **给新会话读的第一份文档。** 它记录的是「现在真实是什么状态」，
 > 而 `docs/spec-v0.3.md` 记录的是「设计意图」—— 两者已经有偏离，差异在 §6 列明。
 
@@ -111,6 +111,33 @@ Codex / Claude。
 
 ---
 
+### 3.5 手柄菜单（`B+←`，2026-09-16 新增）
+
+高频动作直达、低频动作看菜单选。手势只有 12 个，菜单是继续扩展的唯一方向。
+
+- **打开期间手柄整个归菜单**：引擎在**识别器之前**拦截原始事件（`ActionDispatching.handleMenuEvent`），
+  所以 ↑↓/A/B 既不会变成聊天窗口里的方向键/回车，也不会触发任何 chord。
+- **浮层是 non-activating panel，永不成为 key window**。实测：显示前后前台 App 不变、
+  `app.isActive == false`、`panel.isKeyWindow == false`。这是「不抢焦点」的硬证据。
+- **两道安全网**：切 App 由浮层自己轮询（0.15 s）关闭；即使来不及关，
+  **执行时再次校验前台 App == 打开时的 App**，不等则拒绝执行并记 `DENY`。
+- **只列真的能执行的项**：用当前 profile 的 adapter 过滤，缺默认键位的动作不显示
+  （否则会出现「选了没反应」的行）。
+- 打开菜单时会 `recognizer.resetAndEmit()`：菜单是**因为 B+← 这个手势**才打开的，
+  该手势的残留状态不能带进菜单。
+- 菜单栏 `Show Controller Menu` 是同一入口（无手柄也能验证）。
+
+**顺带修掉一个真实缺陷**：Claude 侧 `.newChat` 一直是 `unsupported`，而菜单第一项就是「新建会话」，
+于是 Claude 的菜单会缺掉最有用的一行。用 `dump-menu-accelerators` 读运行中菜单确认
+`File > New Chat = ⌘N`，已补上映射（原注释说的「未验证」是过期的）。
+
+**配置自动迁移**：`B+←` 从「新建会话」改为「打开菜单」。若配置里还留着旧的 per-profile
+`b.left` 覆盖（你那份 Claude 侧就是 `⌘N`），它会**盖住新默认**，导致那个 profile 根本开不出菜单。
+`ConfigMigrations.adoptMenuChord` 只在覆盖**仍等于旧默认值 `⌘N`** 时移除它，并先写
+`config.json.backup-<时间戳>`；用户自己改过的绑定不动。
+
+---
+
 ## 4. 配置
 
 `~/Library/Application Support/PocketAgentRemote/config.json`（菜单 → `Open Config File` / `Reload Config`）
@@ -214,6 +241,8 @@ Tools/dump-menu-accelerators.swift 用 AX API 导出运行中 App 的真实菜�
 | 9 | 输出只有按键 + 修饰键 | **增加系统效果 `RecipeEffect.activateAgentApp`** | 切前台 App 不是按键，adapter 表达不了；且它必须在任何前台 App 下都能用，所以也绕开白名单 |
 | 10 | §18「B 超过 tapMaxMs 即 hold」 | **改为以 `holdMs` 判定，且 chord 优先** | 一次代码审查发现 300 ms 就会切窗口；破坏性动作不能用「比文档更激进」的门槛 |
 | 11 | 释放复用同一条 dispatch 路径 | **释放按「实际发出的按键」处理，不再鉴权/重解析** | 否则中途换前台/换 profile 会让按键卡住（实测复现） |
+| 12 | — | **`b.left` 从「新建会话」改为「打开菜单」** | 手势已用满；菜单是继续扩展功能的唯一方向，新建会话成为菜单第一项 |
+| 13 | — | **`openMenu` 走效果型 recipe（不经过 adapter 的按键路径）** | 打开菜单不是按键，且必须在任何 profile 下都能开 |
 
 ---
 
@@ -269,6 +298,26 @@ Tools/dump-menu-accelerators.swift 用 AX API 导出运行中 App 的真实菜�
 
 ---
 
+19. **长按/修饰键的争用必须明确优先权（push-to-talk 的教训）。** 用户习惯「先按住 B，再按 A」说
+    话（B 一按就是 600–1200 ms）。把长按门槛改成 450 ms 后，B 在他按下 A 之前就已经触发了
+    「切 App」，语音全废。规则现在是：**chord 一旦形成就完全接管这次 B 按下**（清掉 holdFired），
+    无论 B 已按住多久 —— 用户还按着 B，正因为他在把它当修饰键用。
+20. **"没有按键在飞行的释放一律丢弃"这个兜底太宽，会吃掉真实松开。** 菜单打开时会复位识别器
+    （清掉按键状态），于是随后真实的 A 松开落到「没有按键在飞行」分支被丢掉，`aIsDown` 永远留真，
+    「A 已按住时忽略 B」从此拒绝每一次 B —— 语音彻底失效，而且 B 按一下才「解锁」。现在守卫只在
+    真正的拆设备窗口（`isDetaching`）生效；设备清理那一层已由协调器的 `onWillDetach` 屏蔽。
+21. **菜单状态一变就必须复位识别器，而且只能有一个来源。** 菜单打开期间识别器收不到任何事件，
+    所以菜单期间的真实松开不会送达；不复位的话下一个按键会被当成「某个早已结束的手势的尾巴」
+    而被静默吞掉（表现为「要再按一下 B 解锁」）。复位挂在 `dispatcher.onMenuChanged` 上，
+    覆盖全部路径（手柄打开/菜单栏打开/B 关闭/执行后关闭/切 App 关闭）。
+22. **菜单状态只能有一处。** 浮层自己关掉时（切 App、断连）曾只清了 dispatcher 的会话，
+    没通知引擎，于是引擎仍以为菜单开着 —— 下一个按下的键被 dispatcher 回 `.ignored`，
+    引擎**继续往下传给识别器**，`↑` 就变成了发给聊天窗口的真实方向键（用户实测：菜单在屏幕上，
+    但上下键不动光标却动了聊天窗口）。现在「菜单是否打开」只有 `dispatcher.openMenu` 一个来源，
+    引擎读它、并在收到 `.ignored` 时把事件吞掉并重置识别器。
+
+---
+
 ## 8. 验证状态
 
 ### 已实测 ✅
@@ -284,15 +333,15 @@ Tools/dump-menu-accelerators.swift 用 AX API 导出运行中 App 的真实菜�
 - 断连/重连清理状态、不卡键
 - 重建后 Accessibility 授权保持
 
-### 2026-09-16 代码审查后的修复 ✅（146 个单测）
+### 2026-09-16 代码审查后的修复 ✅（当时 146 个单测）
 - 6 条外部审查意见全部独立复核成立，逐条修复并加回归测试（`EngineTests` / `DispatcherTests` /
   `CGEventEmitterTests` / `GuardAndConfigTests` / `GestureRecognizerTests`）。
 - 修复过程中自己引入并当场发现 2 处回归：`performKeyDown` 误弹修饰键（`[58,124,58,124]` 顺序错了）、
   `releaseAll` 因此少释放一个修饰键 —— 两条既有测试立刻抓到，已按原语义重做。
 
 ### 未验证 ⚠️
-- **`B 长按` 的手柄真机验收** —— 代码路径、单元测试、打包、真实切换都验过了，
-  但「手柄上按住 B」这一下需要人来按。
+- **`B 长按` 与手柄菜单** —— 已通过手柄实机验收（2026-09-16）：切 App、菜单打开/导航/执行/
+  B 关闭、语音输入、以及三者的交替重复使用。
 - **T / H 模式实拨验证** —— 代码层面确认不匹配键盘/鼠标设备，但没实际拨过开关
 - **Claude 的 Code 面板命令**（`⌘J` 终端 / `⌘⇧D` 变更 / `⌘⇧F` 文件 / `⌘;` 侧边对话）
   —— 菜单里实测为 `[OFF]`，需要先开 Code 会话
@@ -321,7 +370,7 @@ Tools/dump-menu-accelerators.swift 用 AX API 导出运行中 App 的真实菜�
 ## 10. 常用命令
 
 ```bash
-swift build && swift test                       # 构建 + 146 个测试
+swift build && swift test                       # 构建 + 171 个测试
 # 若报 sandbox_apply: Operation not permitted，加 --disable-sandbox
 ./scripts/make-agent-app.sh release             # 打包菜单栏 App
 ./.build/debug/coresmoke --duration 60          # 真机看手势链路（只打日志，不注入按键）

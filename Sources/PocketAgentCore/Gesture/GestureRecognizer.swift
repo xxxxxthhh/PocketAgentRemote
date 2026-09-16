@@ -11,7 +11,8 @@ import Foundation
 /// Idle
 ///   B down                        -> BPending, arm hold timer
 ///   secondary down while B is down -> ChordActive, emit chord, suppress B's own gesture
-///   B held past holdMs            -> BReady (no output yet)
+///   B held past holdMs            -> BReady (no output yet; a later chord still wins)
+///   chord key down while B is down-> BReady(occupiedByChord), chord emitted
 ///   B released from BPending      -> tap if elapsed <= tapMaxMs, else hold
 ///   B released from BReady        -> hold, unless a chord is still active
 ///   all keys released             -> Idle
@@ -126,11 +127,9 @@ public final class GestureRecognizer {
             // never a layer key, so a B arriving after it must not start a chord or a hold. Letting
             // it do so is how releasing A during push-to-talk turned the tail of a voice input into
             // an app switch.
-            if !aIsDown {
-                guard bState == .idle else { return [] }
-                bState = .pending(since: timestamp)
-                armHoldTimer()
-            }
+            if aIsDown || bState != .idle { return [] }
+            bState = .pending(since: timestamp)
+            armHoldTimer()
             return []
         }
 
@@ -141,13 +140,13 @@ public final class GestureRecognizer {
             bConsumedByChord = true
             holdToken?.cancel()
             holdToken = nil
-            if case .ready(let holdFired, _) = bState {
-                // A chord had already made B a modifier, and the hold timer may have fired before
-                // that. Keep both facts: the release must neither switch apps nor emit Escape.
-                bState = .ready(holdFired: holdFired, occupiedByChord: true)
-            } else {
-                bState = .ready(holdFired: false, occupiedByChord: true)
-            }
+            // The chord takes the press away from B: whatever the hold timer did in the meantime,
+            // B is now a modifier for as long as the user keeps holding it. This is what makes
+            // "hold B, then press A" (push-to-talk) work at any hold duration — without it, holding
+            // B for longer than `holdMs` fired the hold action before the chord even started, which
+            // is exactly backwards: the user is still holding B precisely *because* they are using
+            // it as a modifier.
+            bState = .ready(holdFired: false, occupiedByChord: true)
             return [.gesture(.chord(modifier: .b, key: button))]
         }
 
@@ -191,8 +190,8 @@ public final class GestureRecognizer {
 
             case .ready(let holdFired, let occupiedByChord):
                 bState = .idle
-                // A chord owns this B press: releasing B must never also emit Escape, whether the
-                // chord key is still held or was already released.
+                // A chord owns this B press: releasing B must never also emit Escape or switch apps,
+                // whether the chord key is still held or was already released.
                 if consumed || occupiedByChord { return [] }
                 return [.gesture(holdFired ? .hold(.b) : .tap(.b))]
             }

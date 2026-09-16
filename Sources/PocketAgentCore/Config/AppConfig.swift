@@ -397,6 +397,38 @@ public struct AppConfig: Codable, Equatable, Sendable {
     }
 }
 
+/// One-time adjustments to a config written for an older gesture map.
+///
+/// Not a general migration system — just the one place where a default binding changed underneath a
+/// user who had *overridden* it, which is the case a tolerant decoder cannot help with: their
+/// override still wins, so the old behaviour would silently survive the upgrade. `B+←` moved from
+/// "new chat" to "open the menu" (2026-09-16), and anyone who had customised that chord per profile
+/// would keep firing their old command and never see a menu.
+public enum ConfigMigrations {
+    /// Removes a per-profile `b.left` override **only when it still matches the old default it
+    /// replaced** (`⌘N`).
+    ///
+    /// Matching the old value rather than removing the key outright is the conservative choice: an
+    /// override the user set to something else is a deliberate choice and is left alone.
+    ///
+    /// Returns true when something was changed, so the caller can report it and back the file up.
+    @discardableResult
+    public static func adoptMenuChord(_ config: inout AppConfig) -> Bool {
+        var changed = false
+        for (profile, bindings) in config.profileGestureKeyOverrides {
+            guard let binding = bindings["b.left"] else { continue }
+            // The old Claude-side override was "⌘N with no hold" — the shape a raw keystroke takes.
+            guard binding.key == .n, Set(binding.modifiers) == [.command], !binding.hold else { continue }
+            config.profileGestureKeyOverrides[profile]?.removeValue(forKey: "b.left")
+            if config.profileGestureKeyOverrides[profile]?.isEmpty ?? false {
+                config.profileGestureKeyOverrides.removeValue(forKey: profile)
+            }
+            changed = true
+        }
+        return changed
+    }
+}
+
 /// Reads and writes `AppConfig` as JSON.
 ///
 /// Never overwrites a file it cannot parse: a hand-edited config with a typo must not silently
@@ -455,6 +487,25 @@ public final class ConfigStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(config).write(to: url, options: .atomic)
+    }
+
+    /// Copies the current file aside before it is rewritten, and returns where it went.
+    ///
+    /// Used for the one automatic change to a user's config (see `ConfigMigrations`): a silent
+    /// rewrite of hand-written settings is not acceptable, so the previous bytes are always kept.
+    @discardableResult
+    public func backUp() -> URL? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let stamp = ISO8601DateFormatter().string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+        let target = url.deletingLastPathComponent()
+            .appendingPathComponent("\(url.lastPathComponent).backup-\(stamp)")
+        do {
+            try FileManager.default.copyItem(at: url, to: target)
+            return target
+        } catch {
+            return nil
+        }
     }
 
     /// Applies a change and persists it.

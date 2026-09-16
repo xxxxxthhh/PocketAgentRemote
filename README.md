@@ -85,8 +85,8 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 | **B 轻按** | 取消 / **拒绝** | `Escape` |
 | **B 长按** | **切到另一个 agent**（Codex ⇄ Claude） | 不发按键，直接切换前台 App |
 | **B + ↑** | 跳到最近会话 1 | `⌥⌘1` |
+| **B + ←** | **打开手柄菜单**（见下节） | 不发按键，弹出浮层 |
 | **B + ↓** | 跳到最近会话 2 | `⌥⌘2` |
-| **B + ←** | 新建会话 | `⌘N` |
 | **B + →** | 跳到**需要我处理**的会话 | `⌥⌘A` |
 | **B + A** | **语音输入**（豆包输入法，长按说话） | 按住右 `⌥`（见下） |
 
@@ -125,6 +125,38 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 想换回「新建会话 / 终端 / 模型选择器」等，改配置即可，见下节。
 
 ---
+
+## 手柄菜单（`B+←`）
+
+高频动作凭手感直达，低频动作看着菜单选 —— 手柄只有 12 个手势，菜单是继续扩展的唯一方向。
+
+```text
+┌───────────────────────────┐
+│  Codex                    │
+│                           │
+│  ▸ 新建会话               │
+│    查看变更               │
+│    打开终端               │
+│                           │
+│  ↑↓ 选择   A 执行   B 关闭 │
+└───────────────────────────┘
+```
+
+- **打开后可以松开 B**，菜单留在屏幕上，不用一直捏着组合键。
+- **↑↓ 移动选择，A 执行，B 关闭**。菜单打开期间手柄整个归菜单，**↑↓/A/B 不会传给背后的聊天窗口**。
+- **内容跟随当前 App**：在 Codex 显示 Codex 的操作，在 Claude 显示 Claude 的，且**只列真的能执行的项**
+  （缺默认键位的动作会被自动滤掉，而不是留一行按了没反应的）。
+- **浮层永不抢焦点**（non-activating panel，实测 app 仍非 active、聊天窗口仍是前台），
+  所以你的语音输入、agent 自己的快捷键都不受影响。
+- **切到别的 App 菜单自动关闭**；即使来不及关，**执行时也会校验前台 App 没变**，否则拒绝执行并记日志。
+- **常用直达继续保留**：`B+A` 语音、`B+→` 待处理会话、B 长按切 App、`B+↑/↓` 会话跳转，都不必绕菜单。
+- 不想用手柄时：**菜单栏 → `Show Controller Menu`** 是同一入口。
+
+> **`B+←` 之前是「新建会话」**（后来在 Claude 侧被改绑 `⌘N`）。它现在统一为「打开菜单」，
+> 新建会话是菜单第一项。若你的配置里还留着旧的 `b.left` 覆盖，App 启动时**会自动移除它并留一份备份**
+> （`config.json.backup-<时间戳>`），只在它仍然等于旧默认值 `⌘N` 时才动 —— 你自己改过的绑定不会被碰。
+
+菜单项目前 5 条（按 adapter 实际支持过滤）：新建会话 / 查看变更 / 打开终端 / 切换模型 / 归档会话。
 
 ## 配置
 
@@ -236,6 +268,7 @@ chord       b.up · b.down · b.left · b.right · b.a
 | Phase 2 菜单栏 App | ✅ 可用（见 `docs/pending-user-tests.md` 待你验收） |
 | Phase 3 适配层 | ✅ Codex / Claude / Generic 三套；Codex 侧 8/11 动作有默认键位 |
 | 跨 App 切换（`B 长按`） | ✅ 代码与打包验证通过；**手柄真机验收待你** |
+| 手柄菜单（`B+←`） | ✅ 单测 + 真实窗口冒烟 + 手柄实机验收全部通过 |
 
 ### 已知限制
 
@@ -278,7 +311,7 @@ scripts/make-app.sh            构建探针 App
 
 ```bash
 swift build
-swift test                                  # 146 个测试
+swift test                                  # 171 个测试
 ./.build/debug/coresmoke --duration 60      # 真机看手势链路（只打日志）
 ./.build/debug/agentprobe watch             # 看原始 HID 报告
 swift Tools/dump-menu-accelerators.swift ChatGPT   # 导出 Codex 的真实菜单快捷键

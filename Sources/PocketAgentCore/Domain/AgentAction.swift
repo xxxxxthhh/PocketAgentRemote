@@ -71,6 +71,14 @@ public enum AgentAction: String, Codable, CaseIterable, Sendable {
     // is exempt from the allowlist for the same reason a modifier-only stroke is (see
     // `ActionDispatcher.dispatch`).
     case focusOtherAgent
+
+    // MARK: Menu
+    //
+    // Opens the on-screen menu, which is how the gesture set stops being the limit on what the
+    // controller can reach: the high-frequency actions keep their direct gestures, and everything
+    // that would need a new chord moves into a list the user can see. Like `focusOtherAgent` it
+    // carries no keystroke of its own — pressing it draws an overlay and nothing else.
+    case openMenu
 }
 
 /// How risky an action is to fire (spec §10.5). Drives the guard rules in spec §12/§17.
@@ -118,6 +126,8 @@ public enum RecipeEffect: Equatable, Sendable {
     case keystroke
     /// Bring the other configured agent (Codex ⇄ Claude) to the front. No keystroke is emitted.
     case activateAgentApp
+    /// Draw the on-screen menu for the app in front. No keystroke is emitted.
+    case openMenu
 }
 
 /// A complete, pre-validated recipe for one semantic action (spec §10.5, extended with the
@@ -164,6 +174,7 @@ public extension AgentAction {
     var recipeEffect: RecipeEffect {
         switch self {
         case .focusOtherAgent: return .activateAgentApp
+        case .openMenu: return .openMenu
         default: return .keystroke
         }
     }
@@ -180,6 +191,8 @@ public extension AgentAction {
              .nextChatNeedingAttention:
             return .sensitive
         case .focusOtherAgent: return .sensitive
+        // Opening a menu touches no application: it only draws our own overlay.
+        case .openMenu: return .normal
         }
     }
 }

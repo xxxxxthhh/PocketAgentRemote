@@ -35,6 +35,11 @@ public struct GestureBindings: Equatable, Sendable {
     /// spoken for, holding B was the only slot that cost no other function. It changes the approval
     /// flow — a long press of B used to mean "decline", and is now a cross-app jump, so declining
     /// is a tap. That trade was made deliberately, not by omission.
+    ///
+    /// `b.left` became "open the menu" in the same session, for the opposite reason: the gesture set
+    /// is full, so the way to add more commands is not more chords but a visible list. `newChat`
+    /// moved from this slot to the menu's first row, which costs one extra press and buys room for
+    /// every command that would otherwise need its own gesture.
     public static let `default` = GestureBindings(
         base: [
             .up: .navigateUp,
@@ -47,7 +52,7 @@ public struct GestureBindings: Equatable, Sendable {
         bLayer: [
             .up: .goToRecentChat1,             // ⌥⌘1 — most recent chat
             .down: .goToRecentChat2,           // ⌥⌘2 — second most recent
-            .left: .newChat,                   // ⌘N  — start a new agent task
+            .left: .openMenu,                  // the menu itself; 新建会话 is its first row
             .right: .nextChatNeedingAttention, // ⌥⌘A — whichever agent wants you
             .a: .inspectChanges,               // ⌥⌘B — review the diff
         ],

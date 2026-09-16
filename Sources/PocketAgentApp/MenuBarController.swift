@@ -139,6 +139,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         switchItem.target = self
         menu.addItem(switchItem)
 
+        // Same path as B+←: the controller's menu, so it can be checked without the controller.
+        let menuItem = NSMenuItem(title: "Show Controller Menu", action: #selector(showControllerMenu), keyEquivalent: "")
+        menuItem.target = self
+        menuItem.isEnabled = !environment.isMenuVisible
+        menu.addItem(menuItem)
+
         let configItem = NSMenuItem(title: "Open Config File", action: #selector(openConfig), keyEquivalent: "")
         configItem.target = self
         menu.addItem(configItem)
@@ -221,6 +227,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func focusOtherAgent() {
         environment.focusOtherAgentNow()
+    }
+
+    @objc private func showControllerMenu() {
+        environment.showControllerMenu()
     }
 
     @objc private func openConfig() {
