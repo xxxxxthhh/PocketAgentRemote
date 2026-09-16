@@ -73,7 +73,10 @@ final class AgentMenuTests: XCTestCase {
             for: AppConfig(), frontmostBundleID: claude, frontmostName: "Claude")
         let actions = claudeMenu?.items.map(\.action) ?? []
 
-        XCTAssertEqual(actions, [.newChat], "only the verified New Chat row for now")
+        XCTAssertEqual(
+            actions, [.newChat, .inspectChanges, .openTerminal],
+            "exactly the doubly-confirmed rows"
+        )
         XCTAssertFalse(actions.contains(.openModelPicker), "the model picker is not verified for Claude")
         XCTAssertNil(
             AdapterCatalog.adapter(for: .claudeCode).support(for: .openModelPicker).recipe,

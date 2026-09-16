@@ -102,7 +102,7 @@ public final class ActionDispatcher: ActionDispatching {
             session.menu.moveDown()
         case .a:
             menuSession = session
-            return executeSelectedMenuItem()
+            return executeSelectedMenuItem(config: configProvider())
         case .b:
             menuSession = nil
             onMenuChanged?(nil)
@@ -120,7 +120,7 @@ public final class ActionDispatcher: ActionDispatching {
     }
 
     /// Runs the highlighted row and closes the menu.
-    private func executeSelectedMenuItem() -> MenuEventResult {
+    private func executeSelectedMenuItem(config: AppConfig) -> MenuEventResult {
         guard let session = menuSession else { return .ignored }
         guard let item = session.menu.selectedItem else {
             menuSession = nil
@@ -142,7 +142,15 @@ public final class ActionDispatcher: ActionDispatching {
 
         menuSession = nil
         onMenuChanged?(nil)
-        onDiagnostic?("MENU  running \(item.action.rawValue) (\(item.title))")
+
+        // Log the exact keys about to be injected alongside the row that was chosen. Two of Claude's
+        // rows are context-dependent (its own menu shows them greyed out in a plain chat), so "the
+        // menu item did nothing" is normally Claude declining the keystroke — and without the key in
+        // the log there is no way to tell that apart from us failing to send anything.
+        let stroke = AdapterCatalog.adapter(for: config.resolvedProfile(frontmostBundleID: currentBundleID),
+                                            overrides: config.overrides)
+            .support(for: item.action).recipe?.primaryStroke
+        onDiagnostic?("MENU  running \(item.action.rawValue) (\(item.title)) → \(stroke?.description ?? "no keystroke")")
 
         // Run it with the menu out of the way, but through the normal pipeline so the guard still
         // applies. `isExecutingMenuItem` stops a row from opening the menu again.

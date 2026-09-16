@@ -424,5 +424,6 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 | `docs/codex-menu-shortcuts.md` | 菜单导出早期版本（44 条，对照用） |
 | `docs/research-codex-desktop.md` | Codex 控制面调研 |
 | `docs/research-claude-desktop.md` | Claude 控制面调研 |
+| **`docs/research-claude-commands-verified.md`** | **Claude 命令键位的实测记录**：证据强度分级、`⌘⇧I` 冲突、为什么没验 Code 面板 |
 | `docs/research-codex-micro-mapping.md` | Codex Micro 对标（33 个动作可达性） |
 | `README.md` | 面向使用者的说明 |

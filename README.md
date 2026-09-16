@@ -314,6 +314,7 @@ docs/phase0-summary.md         硬件实测结论与实现约束
 docs/hardware-probe.md         Phase 0 原始记录
 docs/phase1-verification.md    Phase 1 真机验证记录
 docs/research-*.md             Codex / Claude / Codex Micro 调研
+docs/research-claude-commands-verified.md  Claude 命令键位的实测记录（含证据强度分级）
 
 Sources/PocketAgentCore/       全部逻辑（可单测，无 UI 依赖）
 Sources/PocketAgentCore/Focus/ 切前台 App（AppActivator + 两个 agent 的切换规则）

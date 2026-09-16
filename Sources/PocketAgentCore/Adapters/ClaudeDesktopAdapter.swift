@@ -17,16 +17,23 @@ public struct ClaudeDesktopAdapter: ToolAdapter {
 
     /// **Only what has been verified for Claude.**
     ///
-    /// Deliberately short. The other actions this adapter can name — terminal, changes, model picker,
-    /// permission mode — are marked 【静态】 in `docs/research-claude-desktop.md`, i.e. read out of
-    /// the web build's shortcut table rather than observed on the desktop app, and one of them was
-    /// positively wrong: `⌘⇧I` is **incognito chat**, not the model menu (that is `⌘⇧.`). Offering a
-    /// row on an unverified binding sent the wrong command, so an unverified action stays out of the
-    /// menu until someone watches it work.
+    /// Every row here has its binding confirmed twice — the running app's own menu (via
+    /// `Tools/dump-menu-accelerators.swift`) and the shortcut table inside Claude's bundle. Actions
+    /// whose binding comes from the web build only stay out, because offering a row on an unverified
+    /// key already went wrong once (see `openModelPicker` below).
+    ///
+    /// Two of these three are **context-dependent**: `Show Changes` and `Show Terminal` are `[OFF]`
+    /// in Claude's own menu while a plain chat is open, because they belong to a Code session.
+    /// Sending them there is harmless — Claude ignores it — but it will look like "nothing
+    /// happened", so the app logs the injected keys to make that distinguishable from a failure on
+    /// our side.
     public var menuItems: [AdapterMenuItem] {
         [
-            // File > New Chat = ⌘N, read from the running app's menu on 2026-09-16.
-            AdapterMenuItem(action: .newChat, title: "新建对话"),
+            // Labels are Claude's own wording, so the menu reads like Claude's menu.
+            // Evidence for each binding is recorded in `docs/research-claude-commands-verified.md`.
+            AdapterMenuItem(action: .newChat, title: "新建对话"),          // File > New Chat   ⌘N
+            AdapterMenuItem(action: .inspectChanges, title: "显示变更"),   // View > Show Changes ⌘⇧D
+            AdapterMenuItem(action: .openTerminal, title: "显示终端"),     // View > Show Terminal ⌘J
         ]
     }
 
@@ -56,14 +63,15 @@ public struct ClaudeDesktopAdapter: ToolAdapter {
         case .inspectChanges: return .supported(Recipe.tool(.d, [.command, .shift]))   // toggleDiff
         case .openTerminal: return .supported(Recipe.tool(.j, [.command]))             // Show Terminal
 
-        // `openModelPicker` is **deliberately unsupported**, and unsupported for a reason worth
-        // recording: this adapter used to send ⌘⇧I, taken from the web build's shortcut table. On the
-        // desktop app ⌘⇧I is *new incognito chat* — so "切换模型" silently opened an anonymous
-        // conversation. The model menu's real accelerator is not in the app's menu at all
-        // (`model_selector` = ⌘⇧. in the web build), so it needs to be observed on the desktop app
-        // before this can be mapped. Until then: no recipe, no menu row.
+        // `openModelPicker` is **deliberately unsupported**: Claude's bundle table says
+        // `openModelMenu = ⌘⇧I`, a user reported that choosing "切换模型" opened an *anonymous
+        // conversation*, and my own attempt to reproduce it saw no effect at all. The conflict is
+        // unresolved in both directions, so the row is withheld — an unverified key that might
+        // silently create an incognito chat is not worth the feature. Full write-up:
+        // `docs/research-claude-commands-verified.md` §3. Switching models in Claude goes through
+        // the `⌘K` command palette (`b.right`) instead.
         case .openModelPicker:
-            return .unsupported("⌘⇧I turned out to be new incognito chat; the desktop model menu needs verifying first")
+            return .unsupported("⌘⇧I conflicts with incognito chat and could not be reproduced; use the ⌘K palette instead")
 
         case .toggleFastMode: return .supported(Recipe.tool(.f, [.command, .option]))  // toggleFastMode
         case .openPermissionModeMenu: return .supported(Recipe.tool(.m, [.command, .shift]))  // openModeMenu
