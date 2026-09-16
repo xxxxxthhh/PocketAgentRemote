@@ -54,6 +54,33 @@ public final class GestureRecognizer {
     /// True while A is physically down. B pressed during that is ignored: A is never a layer key, so
     /// a B that arrives after it cannot start a chord or a hold.
     private var aIsDown = false
+
+    /// What A is currently doing.
+    ///
+    /// A is the one button that is both a one-shot action (`submit`, fired on the way *down* so
+    /// approvals stay instant) and a hold gesture (push-to-talk). The two are told apart by a timer:
+    /// a release before `aHoldMs` is a submit, crossing `aHoldMs` switches to the hold gesture and
+    /// **no Enter is ever sent** for that press. Nothing is deferred — the submit fires on press.
+    private enum AState: Equatable {
+        case idle
+        /// A is down; still a submit if released in time.
+        case pending(since: TimeInterval)
+        /// The hold threshold was crossed: `holdBegan(.a)` has been emitted.
+        case holding
+    }
+
+    private var aState: AState = .idle
+    private var aHoldToken: GestureSchedulerToken?
+
+    /// Threshold for turning a held A into a hold gesture. Mirrors `B`'s tap window.
+    public var aHoldMs: Double {
+        get { configuration.aHoldMs }
+        set { configuration.aHoldMs = newValue }
+    }
+
+    /// Whether a held A means anything. False keeps A a plain one-shot button, which is what a
+    /// config without an `a.hold` binding asks for.
+    public var aHoldEnabled = false
     /// True while the current B press has already been consumed by a chord. It stays set until B is
     /// released — clearing it when the chord *key* is released would let B's release emit Escape
     /// afterwards, which is exactly the stuck-Escape bug the tests catch.
@@ -101,6 +128,14 @@ public final class GestureRecognizer {
         aIsDown = false
 
         var output: [ResolvedEvent] = []
+        // A hold gesture in flight has to be ended explicitly, or the injected key (Doubao's ⌥)
+        // stays down after the controller disappears.
+        aHoldToken?.cancel()
+        aHoldToken = nil
+        if case .holding = aState {
+            output.append(.gesture(.holdEnded(.a)))
+        }
+        aState = .idle
         // A held (modifier-only) chord must be released too, or the user's session inherits a stuck
         // Option+Shift when the controller disconnects mid-chord.
         if let key = chordKey {
@@ -157,14 +192,34 @@ public final class GestureRecognizer {
             return [.keyDown(button)]
         }
 
-        // A must never repeat, so it is a complete press in one go.
+        // A: one-shot action immediately, unless it is held long enough to become a hold gesture.
         aIsDown = true
-        return [.keyDown(button), .keyUp(button)]
+        guard button == .a, aHoldEnabled else {
+            // Must never repeat, so it is a complete press in one go.
+            return [.keyDown(button), .keyUp(button)]
+        }
+        aState = .pending(since: timestamp)
+        armAHoldTimer()
+        return []
     }
 
     private func handleRelease(_ button: PhysicalButton, at timestamp: TimeInterval) -> [ResolvedEvent] {
         if button == .a {
             aIsDown = false
+            if button == .a, case .pending = aState {
+                // Released inside the window: an ordinary submit, decided by the release but sent
+                // *now* — the Enter the target sees is not delayed, it simply never happened during
+                // a hold.
+                aHoldToken?.cancel()
+                aHoldToken = nil
+                aState = .idle
+                return [.keyDown(.a), .keyUp(.a)]
+            }
+            if case .holding = aState {
+                aState = .idle
+                return [.gesture(.holdEnded(.a))]
+            }
+            aState = .idle
         }
 
         if button == .b {
@@ -208,6 +263,22 @@ public final class GestureRecognizer {
         }
 
         return []
+    }
+
+    private func armAHoldTimer() {
+        aHoldToken?.cancel()
+        aHoldToken = scheduler.schedule(after: aHoldMs / 1000) { [weak self] in
+            self?.aHoldTimerFired()
+        }
+    }
+
+    private func aHoldTimerFired() {
+        aHoldToken = nil
+        guard case .pending = aState else { return }
+        aState = .holding
+        // The hold gesture starts now, while the button is still down. `deliver` is used because the
+        // timer runs outside `handle`.
+        deliver([.gesture(.holdBegan(.a))])
     }
 
     private func armHoldTimer() {

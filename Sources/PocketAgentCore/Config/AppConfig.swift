@@ -361,9 +361,25 @@ public struct AppConfig: Codable, Equatable, Sendable {
         resolvedGestureOverrides(profile: profile)
     }
 
+    /// Bindings that ship enabled without appearing in the config file.
+    ///
+    /// Config wins over these (see `resolvedGestureOverrides`), so they are a default rather than a
+    /// policy — and they exist so a new gesture does not require every existing config to be edited
+    /// before it works.
+    ///
+    /// `a.hold` is push-to-talk on one button: hold A to talk, release to stop. It replaced the
+    /// two-button `B+A` grab as the recommended trigger, and it fires under **any** frontmost app
+    /// because it carries no command into one (same reasoning as a modifier-only chord).
+    public static let defaultGestureOverrides: [String: KeyBinding] = [
+        "a.hold": KeyBinding(modifiers: [.rightOption], hold: true),
+    ]
+
     private func resolvedGestureOverrides(profile: ToolProfile?) -> [String: GestureOverride] {
         let known = Set(GestureID.all)
         var result: [String: GestureOverride] = [:]
+        for (gesture, binding) in AppConfig.defaultGestureOverrides where known.contains(gesture) {
+            result[gesture] = binding.gestureOverride
+        }
         for (gesture, binding) in gestureKeyOverrides where known.contains(gesture) {
             result[gesture] = binding.gestureOverride
         }

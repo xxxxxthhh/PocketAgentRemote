@@ -200,6 +200,10 @@ func describe(_ event: ResolvedEvent) -> String {
     case .gesture(.chord(let modifier, let key)): return "chord(\(modifier.rawValue) + \(key.rawValue))"
     case .gesture(.chordReleased(let modifier, let key)):
         return "chordReleased(\(modifier.rawValue) + \(key.rawValue))"
+    case .gesture(.holdBegan(let button)):
+        return "holdBegan(\(button.rawValue))"
+    case .gesture(.holdEnded(let button)):
+        return "holdEnded(\(button.rawValue))"
     }
 }
 

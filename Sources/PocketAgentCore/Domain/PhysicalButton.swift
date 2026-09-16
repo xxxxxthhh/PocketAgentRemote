@@ -59,6 +59,15 @@ public enum ControllerGesture: Equatable, Sendable {
     /// the release is what ends the gesture. Action bindings ignore it, which is what keeps a
     /// chord's action a single one-shot press.
     case chordReleased(modifier: PhysicalButton, key: PhysicalButton)
+    /// A single button crossed the hold threshold **while still down**, so a hold-type binding can
+    /// start now rather than at release.
+    ///
+    /// This is what makes push-to-talk a one-button gesture: the key goes down when the threshold is
+    /// crossed and comes back up when the button is released. A plain `hold` is a *completed* press
+    /// (it fires on release) and so cannot express "still holding".
+    case holdBegan(PhysicalButton)
+    /// The button that began a hold came back up. Ends the gesture `holdBegan` started.
+    case holdEnded(PhysicalButton)
 }
 
 /// Output of the gesture engine, before semantic-action resolution.

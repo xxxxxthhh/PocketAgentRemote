@@ -129,16 +129,26 @@ public enum GestureID {
         case .gesture(.chord(let modifier, let key)), .gesture(.chordReleased(let modifier, let key)):
             // Start and end share one identifier, so a single override covers the whole gesture.
             return "\(modifier.rawValue).\(key.rawValue)"
+        case .gesture(.holdBegan(let button)), .gesture(.holdEnded(let button)):
+            // Same trick for single-button holds: `a.hold` covers the whole press.
+            return "\(button.rawValue).hold"
         }
     }
 
-    /// Every identifier the config may use — exactly the 12 gestures the hardware can produce:
-    /// `up`/`down`/`left`/`right`/`a`, then `b.tap`, `b.hold`, and the four B chords.
+    /// Every identifier the config may use: `up`/`down`/`left`/`right`/`a`, then `b.tap`, `b.hold`,
+    /// the four B chords, and `a.hold` (push-to-talk on one button).
     /// Handy for validation and for documenting the config surface.
+    /// Buttons that are both a one-shot action and a hold gesture. `a` is the only one: held, it is
+    /// push-to-talk instead of `submit`.
+    public static let holdableButtons: [PhysicalButton] = [.a]
+
     public static let all: [String] = {
         var ids = PhysicalButton.allCases
             .filter { !modifiers.contains($0) }
             .map(\.rawValue)
+        for button in holdableButtons {
+            ids.append("\(button.rawValue).hold")
+        }
         for modifier in modifiers {
             ids.append("\(modifier.rawValue).tap")
             ids.append("\(modifier.rawValue).hold")
@@ -203,16 +213,21 @@ public struct EventResolver: Sendable {
         if let override = table[GestureID.of(event)] {
             let stroke = override.stroke
             if override.holdsModifiersOnly {
-                // Held modifier-only binding: press on chord start, release when the chord ends.
+                // Held modifier-only binding: press when the gesture starts, release when it ends —
+                // whether that is a chord (`b.a`) or one button held down (`a.hold`).
                 switch event {
-                case .gesture(.chord): return [.raw(stroke, .down)]
-                case .gesture(.chordReleased): return [.raw(stroke, .up)]
+                case .gesture(.chord), .gesture(.holdBegan): return [.raw(stroke, .down)]
+                case .gesture(.chordReleased), .gesture(.holdEnded): return [.raw(stroke, .up)]
                 default: break
                 }
             }
             // Everything else is a tap. In particular a one-shot gesture ignores the release.
-            if case .gesture(.chordReleased) = event { return [] }
-            return [.raw(stroke, event.phase)]
+            switch event {
+            case .gesture(.chordReleased), .gesture(.holdEnded):
+                return []
+            default:
+                return [.raw(stroke, event.phase)]
+            }
         }
 
         switch event {
@@ -238,7 +253,12 @@ public struct EventResolver: Sendable {
             guard let action = bindings.bLayer[key] else { return [] }
             return [.press(action)]
 
-        case .gesture(.chordReleased):
+        case .gesture(.holdBegan):
+            // A hold gesture is a *binding* gesture, never a semantic action: it starts a held key,
+            // so it is resolved only through `gestureOverrides`.
+            return []
+
+        case .gesture(.chordReleased), .gesture(.holdEnded):
             // Semantic actions are one-shot; only held bindings care about the release.
             return []
         }
@@ -254,7 +274,12 @@ public struct EventResolver: Sendable {
         for event: ResolvedEvent,
         overrides: [String: GestureOverride]? = nil
     ) -> [ActionTrigger] {
-        guard case .gesture(.chordReleased) = event else {
+        let isRelease: Bool
+        switch event {
+        case .gesture(.chordReleased), .gesture(.holdEnded): isRelease = true
+        default: isRelease = false
+        }
+        guard isRelease else {
             return pressTriggers(for: event, overrides: overrides)
         }
 

@@ -5,15 +5,27 @@ import XCTest
 /// menu's two halves meet. An earlier round of bugs lived exactly here: the recognizer's view of
 /// which buttons are down and the dispatcher's view of whether a menu is open.
 final class MenuFlowTests: XCTestCase {
+    /// Records what was emitted **and on which method**.
+    ///
+    /// A held binding and a one-shot press produce the same kind of event through different calls
+    /// (`keyDown`/`keyUp` versus `press`), and several of the bugs found here lived exactly in that
+    /// distinction — so the phase is part of the record rather than being flattened away.
     private final class SpyEmitter: InputEmitting {
-        private(set) var strokes: [KeyStroke] = []
-        private(set) var presses = 0
-        func reset() { strokes.removeAll(); presses = 0; downs = 0; ups = 0 }
-        private(set) var downs = 0
-        private(set) var ups = 0
-        func press(_ stroke: KeyStroke) { presses += 1; strokes.append(stroke) }
-        func keyDown(_ stroke: KeyStroke) { downs += 1; strokes.append(stroke) }
-        func keyUp(_ stroke: KeyStroke) { ups += 1; strokes.append(stroke) }
+        enum Phase: Equatable { case press, down, up }
+        struct Emission: Equatable {
+            let phase: Phase
+            let stroke: KeyStroke
+        }
+
+        private(set) var emissions: [Emission] = []
+
+        var strokes: [KeyStroke] { emissions.map(\.stroke) }
+
+        func reset() { emissions.removeAll() }
+
+        func press(_ stroke: KeyStroke) { emissions.append(Emission(phase: .press, stroke: stroke)) }
+        func keyDown(_ stroke: KeyStroke) { emissions.append(Emission(phase: .down, stroke: stroke)) }
+        func keyUp(_ stroke: KeyStroke) { emissions.append(Emission(phase: .up, stroke: stroke)) }
         func releaseAll() {}
     }
 
@@ -37,12 +49,15 @@ final class MenuFlowTests: XCTestCase {
         let dispatcher: ActionDispatcher
         let source: FakeSource
         let emitter: SpyEmitter
+        /// The injected clock, so a test can cross a hold threshold deterministically.
+        let scheduler: ManualScheduler
         let log: () -> [String]
     }
 
-    private func makeRig() -> Rig {
+    private func makeRig(configure: (inout AppConfig) -> Void = { _ in }) -> Rig {
         var config = AppConfig()
         config.profileMode = .auto
+        configure(&config)
         let emitter = SpyEmitter()
         let frontmost = FixedFrontmost()
         let dispatcher = ActionDispatcher(
@@ -54,9 +69,12 @@ final class MenuFlowTests: XCTestCase {
             AgentMenuBuilder.menu(for: config, frontmostBundleID: bundleID, frontmostName: "Codex")
         }
         let source = FakeSource()
+        let scheduler = ManualScheduler()
         let engine = ControllerEngine(
             dispatcher: dispatcher,
-            scheduler: ManualScheduler(),
+            // The real resolved table, so the `a.hold` push-to-talk default is in play here too.
+            gestureOverrides: config.gestureOverrides(for: config.activeProfile),
+            scheduler: scheduler,
             coordinator: ControllerInputCoordinator(gameController: FakeSource(), hid: source)
         )
         var diagnostics: [String] = []
@@ -72,6 +90,7 @@ final class MenuFlowTests: XCTestCase {
             dispatcher: dispatcher,
             source: source,
             emitter: emitter,
+            scheduler: scheduler,
             log: { diagnostics }
         )
     }
@@ -213,6 +232,78 @@ final class MenuFlowTests: XCTestCase {
         XCTAssertFalse(
             rig.emitter.strokes.contains(KeyStroke(.enter)),
             "B must not be ignored: a bare Enter here is what killed voice input. Log: \(rig.log())"
+        )
+    }
+
+    /// A held A is push-to-talk on one button: the voice key goes down when the threshold is crossed
+    /// and comes back up on release. No Enter is ever sent for that press.
+    ///
+    /// The case is driven end to end through the real recognizer and dispatcher; the hold timer is
+    /// the injected `ManualScheduler`, and any later event advances it past the threshold.
+    func testHoldingADrivesTheVoiceBindingAndNeverSubmits() {
+        let rig = makeRig()
+        defer { rig.engine.stop() }
+
+        press(rig, .a, at: 0)
+        XCTAssertTrue(rig.emitter.strokes.isEmpty, "the press alone must not submit")
+
+        // Crossing the threshold: the recognizer's hold timer fires and the binding goes down.
+        rig.scheduler.advance(to: 1.0)
+
+        let option = KeyStroke(modifiers: [.rightOption])
+        XCTAssertEqual(
+            rig.emitter.emissions,
+            [.init(phase: .down, stroke: option)],
+            "holding A must hold the voice key. Log: \(rig.log())"
+        )
+
+        release(rig, .a, at: 2.0)
+
+        XCTAssertEqual(
+            rig.emitter.emissions.last,
+            .init(phase: .up, stroke: option),
+            "releasing A must release the voice key"
+        )
+        XCTAssertFalse(
+            rig.emitter.emissions.contains { $0.stroke == KeyStroke(.enter) },
+            "holding A must never submit. Log: \(rig.log())"
+        )
+    }
+
+    /// And a quick tap is still an approval, sent immediately.
+    func testTappingAStillSubmitsImmediately() {
+        let rig = makeRig()
+        defer { rig.engine.stop() }
+
+        press(rig, .a, at: 0)
+        release(rig, .a, at: 0.08)
+
+        // `submit` is a *held* action (down/up), which is what makes it repeat-free and lets the
+        // release be recorded and honoured even if the frontmost app changes mid-press.
+        XCTAssertEqual(
+            rig.emitter.emissions,
+            [.init(phase: .down, stroke: .key(.enter)), .init(phase: .up, stroke: .key(.enter))]
+        )
+    }
+
+    /// The old two-button grip keeps working: `a.hold` is a *default*, so a config that still binds
+    /// `b.a` keeps that binding too — adding the one-button trigger removes nothing.
+    func testTheOldTwoButtonVoiceGripStillWorks() {
+        let rig = makeRig { config in
+            config.gestureKeyOverrides["b.a"] = AppConfig.KeyBinding(modifiers: [.rightOption], hold: true)
+        }
+        defer { rig.engine.stop() }
+        let option = KeyStroke(modifiers: [.rightOption])
+
+        press(rig, .b, at: 0)
+        press(rig, .a, at: 0.05)
+        release(rig, .b, at: 0.10)
+        release(rig, .a, at: 1.50)
+
+        XCTAssertEqual(
+            rig.emitter.emissions,
+            [.init(phase: .down, stroke: option), .init(phase: .up, stroke: option)],
+            "B+A must still be push-to-talk. Log: \(rig.log())"
         )
     }
 

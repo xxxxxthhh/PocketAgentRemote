@@ -57,6 +57,84 @@ final class GestureRecognizerTests: XCTestCase {
         XCTAssertEqual(harness.gestures, [.tap(.b)])
     }
 
+    // MARK: - A as a one-button push-to-talk (2026-09-16)
+
+    private func voiceHarness() -> Harness {
+        let harness = Harness()
+        harness.recognizer.aHoldEnabled = true
+        return harness
+    }
+
+    func testAShortTapIsStillASubmitAndIsNotDelayed() {
+        let harness = voiceHarness()
+        harness.press(.a)
+        harness.advance(to: 0.100)
+        harness.release(.a)
+
+        XCTAssertEqual(harness.emitted, [.keyDown(.a), .keyUp(.a)])
+        XCTAssertFalse(harness.emitted.contains(.gesture(.holdBegan(.a))))
+    }
+
+    func testAShortTapSendsNothingUntilItIsReleased() {
+        // The press itself must stay silent, or holding A would type an Enter before the mic opens.
+        let harness = voiceHarness()
+        harness.press(.a)
+        harness.advance(to: 0.100)
+
+        XCTAssertEqual(harness.emitted, [], "a press that may become a hold must not submit yet")
+    }
+
+    func testHoldingAStartsTheHoldGestureAtTheThreshold() {
+        let harness = voiceHarness()
+        harness.press(.a)
+        harness.advance(to: 0.250)   // past aHoldMs
+
+        XCTAssertEqual(harness.gestures, [.holdBegan(.a)])
+    }
+
+    func testHoldingANeverSubmits() {
+        // The whole point: a held A is push-to-talk, not an approval.
+        let harness = voiceHarness()
+        harness.press(.a)
+        harness.advance(to: 2.000)
+        harness.release(.a)
+
+        XCTAssertEqual(harness.gestures, [.holdBegan(.a), .holdEnded(.a)])
+        XCTAssertFalse(harness.emitted.contains(.keyDown(.a)), "holding A must never send Enter")
+    }
+
+    func testReleaseEndsTheHoldGesture() {
+        let harness = voiceHarness()
+        harness.press(.a)
+        harness.advance(to: 0.250)
+        harness.advance(to: 3.000)
+        harness.release(.a)
+
+        XCTAssertEqual(harness.gestures.last, .holdEnded(.a))
+    }
+
+    func testDisconnectEndsAnInFlightHold() {
+        // Otherwise the injected key (Doubao's ⌥) stays down after the controller vanishes.
+        let harness = voiceHarness()
+        harness.press(.a)
+        harness.advance(to: 0.250)
+
+        harness.recognizer.resetAndEmit()
+
+        XCTAssertEqual(harness.gestures.last, .holdEnded(.a))
+    }
+
+    func testWithoutTheBindingAStaysAPlainButton() {
+        // A config that binds nothing to `a.hold` must keep A exactly as it was.
+        let harness = Harness()   // aHoldEnabled defaults to false
+        harness.press(.a)
+        harness.advance(to: 1.000)
+
+        XCTAssertEqual(harness.emitted, [.keyDown(.a), .keyUp(.a)])
+        harness.release(.a)
+        XCTAssertEqual(harness.gestures, [])
+    }
+
     // MARK: - Chords (spec §6.2)
 
     func testFinishVoiceInputAfterALongBHoldDoesNotAlsoEmitEscape() {

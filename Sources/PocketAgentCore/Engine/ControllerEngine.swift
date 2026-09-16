@@ -53,7 +53,10 @@ public final class ControllerEngine {
     /// switch takes effect without relaunching.
     public var gestureOverrides: [String: GestureOverride] {
         get { resolver.gestureOverrides }
-        set { resolver = EventResolver(bindings: resolver.bindings, gestureOverrides: newValue) }
+        set {
+            resolver = EventResolver(bindings: resolver.bindings, gestureOverrides: newValue)
+            recognizer.aHoldEnabled = aHoldEnabled
+        }
     }
 
     /// Supplies the gesture overrides in force *right now*, consulted before each event.
@@ -79,6 +82,13 @@ public final class ControllerEngine {
     /// discarded here rather than by a general "nothing in flight" rule, which misfired on real input.
     private var isDetaching = false
 
+    /// Whether a held A is a gesture (push-to-talk) rather than a one-shot submit.
+    ///
+    /// Driven by the resolved override table, so it follows a config reload and a profile switch:
+    /// with no `a.hold` binding, A stays a plain button and the `submit` fires the moment it goes
+    /// down, exactly as before.
+    private var aHoldEnabled: Bool { resolver.gestureOverrides["a.hold"] != nil }
+
     /// Whether the on-screen menu is up. Read from the dispatcher, which owns that state.
     public var isMenuOpen: Bool { dispatcher.openMenu != nil }
     /// Menu to draw (non-nil) or take down (nil). The app hangs its overlay here.
@@ -101,6 +111,9 @@ public final class ControllerEngine {
     public func start() {
         guard !running else { return }
         running = true
+
+        recognizer.aHoldEnabled = aHoldEnabled
+        recognizer.aHoldMs = recognizer.configuration.aHoldMs
 
         recognizer.emit = { [weak self] events in
             guard let self else { return }
@@ -242,5 +255,6 @@ public final class ControllerEngine {
         let overrides = provider()
         guard overrides != resolver.gestureOverrides else { return }
         resolver = EventResolver(bindings: resolver.bindings, gestureOverrides: overrides)
+        recognizer.aHoldEnabled = aHoldEnabled
     }
 }

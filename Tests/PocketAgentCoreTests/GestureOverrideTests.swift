@@ -115,16 +115,25 @@ final class GestureOverrideTests: XCTestCase {
         XCTAssertFalse(ids.contains("a.left"), "a is not a modifier, so a.left must not exist")
     }
 
-    /// The hardware produces exactly twelve gestures. This number is quoted in the README and in
-    /// `docs/HANDOFF.md`, and it was wrong there once (11 — `b.tap` and `b.hold` had been collapsed
-    /// into one), so it is pinned here.
-    func testGestureInventoryIsExactlyTwelve() {
-        XCTAssertEqual(GestureID.all.count, 12)
+    /// The full gesture inventory. The *hardware* produces twelve (six buttons: four directions,
+    /// A and B); `a.hold` is the thirteenth because A can be both a one-shot action and a hold
+    /// gesture — held, it is push-to-talk instead of `submit`.
+    ///
+    /// This number is quoted in the README and `docs/HANDOFF.md`, and it was wrong there once
+    /// (11 — `b.tap` and `b.hold` had been collapsed into one), so it is pinned here.
+    func testGestureInventoryIsComplete() {
+        XCTAssertEqual(GestureID.all.count, 13)
         XCTAssertEqual(
             GestureID.all.sorted(),
-            ["a", "b.a", "b.down", "b.hold", "b.left", "b.right", "b.tap", "b.up",
+            ["a", "a.hold", "b.a", "b.down", "b.hold", "b.left", "b.right", "b.tap", "b.up",
              "down", "left", "right", "up"]
         )
+    }
+
+    func testAIsTheOnlyButtonThatIsAlsoAHold() {
+        // Directions and B are excluded: B already has its own hold, and a held direction has no
+        // meaning (it would fight key repeat).
+        XCTAssertEqual(GestureID.holdableButtons, [.a])
     }
 }
 
@@ -161,7 +170,10 @@ final class ConfigCompatibilityTests: XCTestCase {
         }
         """
         let config = try JSONDecoder().decode(AppConfig.self, from: Data(json.utf8))
-        XCTAssertEqual(config.gestureOverrides.count, 1, "unknown gesture ids must be dropped")
+        // One from the config plus the built-in `a.hold` default: unknown ids are dropped, defaults
+        // are not.
+        XCTAssertEqual(config.gestureOverrides.count, 2, "unknown gesture ids must be dropped")
+        XCTAssertNotNil(config.gestureOverrides["a.hold"], "the built-in push-to-talk default stays")
         let override = try XCTUnwrap(config.gestureOverrides["b.a"])
         XCTAssertEqual(override.stroke, KeyStroke(modifiers: [.option, .shift]))
         XCTAssertFalse(override.isHeld, "a bare modifier binding must be a tap by default")
@@ -211,7 +223,8 @@ final class ConfigCompatibilityTests: XCTestCase {
         { "profileGestureKeyOverrides" : { "claudeCode" : { "b.right" : { "key" : "k", "modifiers" : [ "command" ] } } } }
         """
         let config = try JSONDecoder().decode(AppConfig.self, from: Data(json.utf8))
-        XCTAssertTrue(config.gestureOverrides(for: .codex).isEmpty)
+        // Nothing from the config applies to Codex — but the built-in default still does.
+        XCTAssertEqual(config.gestureOverrides(for: .codex).keys.sorted(), ["a.hold"])
         XCTAssertEqual(config.gestureOverrides(for: .claudeCode)["b.right"]?.stroke, KeyStroke(.k, modifiers: [.command]))
     }
 

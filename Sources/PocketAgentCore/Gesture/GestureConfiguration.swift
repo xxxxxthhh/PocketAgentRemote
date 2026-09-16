@@ -11,10 +11,19 @@ public struct GestureConfiguration: Equatable, Sendable {
     public var tapMaxMs: Double
     /// B held past this duration becomes a modifier; releasing it without a chord is a hold.
     public var holdMs: Double
+    /// A held this long stops being a one-shot (`submit`) and becomes a hold gesture
+    /// (push-to-talk), for configs that bind `a.hold`.
+    ///
+    /// Separate from `holdMs` because it is a different question: `holdMs` decides when B becomes a
+    /// modifier, this decides when A stops meaning "submit". Deliberately short — the user is
+    /// holding A *to talk*, so every millisecond here is one they spend waiting before the
+    /// microphone opens.
+    public var aHoldMs: Double
 
-    public init(tapMaxMs: Double = 220, holdMs: Double = 450) {
+    public init(tapMaxMs: Double = 220, holdMs: Double = 450, aHoldMs: Double = 220) {
         self.tapMaxMs = tapMaxMs
         self.holdMs = holdMs
+        self.aHoldMs = aHoldMs
     }
 
     public static let `default` = GestureConfiguration()
