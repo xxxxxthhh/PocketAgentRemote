@@ -153,7 +153,7 @@ key 是语义动作名，value 是按键。用来补齐 Codex **没有默认键�
 **这一层绕过语义动作词表**，可以直接把任意手势指向任意按键，
 比如让 `B + A` 发 `⇧⎋`（Clear all unreads），而我们的动作表里根本没有这个动作。
 
-手势标识符（共 11 个，就是硬件能产生的全部）：
+手势标识符（共 12 个，就是硬件能产生的全部）：
 
 ```text
 基础层      up · down · left · right · a
@@ -219,9 +219,11 @@ chord       b.up · b.down · b.left · b.right · b.a
 ## 目录
 
 ```text
-docs/spec-v0.3.md              当前规格（唯一权威）
-docs/pending-user-tests.md     ⚠️ 需要你亲自验证的清单
-docs/codex-menu-shortcuts.md   Codex 菜单快捷键实测导出（44 条，可从运行中 App 重新生成）
+docs/HANDOFF.md                ⭐ 当前真实状态（新会话从这里读起）
+docs/spec-v0.3.md              设计意图（与实现已有偏离，见 HANDOFF §6）
+docs/pending-user-tests.md     待验证清单
+docs/codex-shortcuts.md        Codex 快捷键（官方面板 + 菜单实测导出）
+docs/codex-menu-shortcuts.md   菜单导出早期版本（44 条，对照用）
 docs/phase0-summary.md         硬件实测结论与实现约束
 docs/hardware-probe.md         Phase 0 原始记录
 docs/phase1-verification.md    Phase 1 真机验证记录
@@ -232,6 +234,7 @@ Sources/PocketAgentApp/        菜单栏 App（薄壳）
 Sources/AgentProbe/            Phase 0 探针
 Sources/AgentCoreSmoke/        Phase 1 真机验证工具
 
+Tools/dump-menu-accelerators.swift  导出运行中 App 的真实菜单快捷键
 scripts/make-agent-app.sh      构建菜单栏 App
 scripts/make-app.sh            构建探针 App
 ```
