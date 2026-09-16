@@ -100,7 +100,7 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 
 按住 `B` 不放可以连续触发多个 chord（类似按住 Shift 连按不同字母）。
 
-**B 层为什么是「会话跳转」**：手柄只有 11 个手势，而
+**B 层为什么是「会话跳转」**：手柄只有 12 个手势，而
 `⌥⌘1…6`（Go to recent chat）正是 Codex Micro 六个 agent 键的对等物 ——
 每个键跳到某个 agent 的会话。`⌥⌘A` 更进一步：一键跳到**正在等你处理**的那个会话
 （等审批 / 有未读）。这是我们能用六键手柄做到的、最接近 Micro 体验的形态。

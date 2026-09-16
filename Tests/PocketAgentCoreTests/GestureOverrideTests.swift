@@ -113,6 +113,18 @@ final class GestureOverrideTests: XCTestCase {
         XCTAssertTrue(ids.contains("b.a"))
         XCTAssertFalse(ids.contains("a.left"), "a is not a modifier, so a.left must not exist")
     }
+
+    /// The hardware produces exactly twelve gestures. This number is quoted in the README and in
+    /// `docs/HANDOFF.md`, and it was wrong there once (11 — `b.tap` and `b.hold` had been collapsed
+    /// into one), so it is pinned here.
+    func testGestureInventoryIsExactlyTwelve() {
+        XCTAssertEqual(GestureID.all.count, 12)
+        XCTAssertEqual(
+            GestureID.all.sorted(),
+            ["a", "b.a", "b.down", "b.hold", "b.left", "b.right", "b.tap", "b.up",
+             "down", "left", "right", "up"]
+        )
+    }
 }
 
 final class ConfigCompatibilityTests: XCTestCase {
