@@ -61,11 +61,13 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 | **B + ↓** | 跳到最近会话 2 | `⌥⌘2` |
 | **B + ←** | 新建会话 | `⌘N` |
 | **B + →** | 跳到**需要我处理**的会话 | `⌥⌘A` |
-| **B + A** | **语音输入**（豆包输入法） | 单击 `⌥⇧`（见下） |
+| **B + A** | **语音输入**（豆包输入法，长按说话） | 按住右 `⌥`（见下） |
 
-> `B + A` 走的是配置里的**修饰键手势**：按下 B+A 时发出一次左 Option + 左 Shift 的
-> **单击**（按下即抬起）—— 对应豆包输入法的「单击左option+左shift」。
+> **`B + A` 来自配置里的修饰键手势**，不是内置的语义动作。按住 B 再按 A 就开始语音输入，
+> **此时松开 B 也没关系** —— 只要一直按着 A 就持续输入，松开 A 结束。
 > 这类绑定是**全局**的（不受前台 App 白名单限制），因为它不向任何 App 输入命令。
+>
+> 用的是豆包的「长按**右**option」形态，不是「单击左option+左shift」—— 后者实测在合成事件下**不生效**。
 
 > `A` / `B` 同时承担「批准 / 拒绝」，因为 Codex 和 Claude 的审批弹层用的就是 `Enter` / `Escape` ——
 > 最终的确认权始终留在 agent 自己的 UI 里。
@@ -128,16 +130,15 @@ chord       b.up · b.down · b.left · b.right · b.a
 
 ```json
 "gestureKeyOverrides": {
-  "b.a": { "modifiers": ["option", "shift"] }
+  "b.a": { "modifiers": ["rightOption"], "hold": true }
 }
 ```
 
-这种绑定默认是**单击**（按下即抬起）—— 对应豆包输入法的「单击左option+左shift」。
-有些目标是**按住式**的（例如豆包的「长按右option」），加 `"hold": true`：
-
-```json
-"b.a": { "modifiers": ["option"], "hold": true }
-```
+- `hold: true` = **按住式**（chord 开始时按下，松开 A 时抬起）。实测这是豆包语音输入唯一可行的形态。
+- 不写 `hold`（默认）= **单击**（按下即抬起）。
+- 修饰键**区分左右**：`option` 是左 Option（keyCode 58），`rightOption` 是右 Option（61）。
+  有些目标（比如豆包）只认其中一侧，选错了不会报错、只是没反应。
+  同理还有 `shift`/`rightShift`、`control`/`rightControl`、`command`/`rightCommand`。
 
 安全上分两类：
 
