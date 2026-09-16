@@ -26,6 +26,14 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// Profile used in `.auto` mode when the frontmost app is not in `autoProfileBundleIDs`.
     public var fallbackProfile: ToolProfile
 
+    /// The two desktop apps "focus the other agent" toggles between.
+    ///
+    /// This is its own pair rather than a reuse of `autoProfileBundleIDs` because the two answer
+    /// different questions: that map says *which keymap* an app gets, this says *which two apps the
+    /// remote is a remote for*. `left` is the first position and `right` the second, so a future
+    /// explicit "left/right" switch reads straight off the same data instead of from a second list.
+    public var agentPair: AgentPair
+
     // Gesture timing (spec §6.2 / §18).
     public var tapMaxMs: Double
     public var holdMs: Double
@@ -55,6 +63,93 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// does nothing in Claude, whose equivalents are `⌘⇧[` / `⌘⇧]`. A profile-specific entry wins
     /// over the global `gestureKeyOverrides`.
     public var profileGestureKeyOverrides: [String: [String: KeyBinding]]
+
+    /// The two agents the "switch agent" gesture toggles between.
+    ///
+    /// Both fields are optional so a partially written config still decodes — a missing side falls
+    /// back to the built-in default for that side (see `AgentPair.resolved`).
+    public struct AgentPair: Codable, Equatable, Sendable {
+        /// First position — Codex by default.
+        public var leftBundleID: String?
+        /// Second position — Claude by default.
+        public var rightBundleID: String?
+        /// Optional display label for the left app; cosmetic (menu title, logs).
+        public var leftName: String?
+        /// Optional display label for the right app; cosmetic (menu title, logs).
+        public var rightName: String?
+
+        public init(
+            leftBundleID: String? = nil,
+            rightBundleID: String? = nil,
+            leftName: String? = nil,
+            rightName: String? = nil
+        ) {
+            self.leftBundleID = leftBundleID
+            self.rightBundleID = rightBundleID
+            self.leftName = leftName
+            self.rightName = rightName
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case leftBundleID, rightBundleID, leftName, rightName
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            leftBundleID = try container.decodeIfPresent(String.self, forKey: .leftBundleID)
+            rightBundleID = try container.decodeIfPresent(String.self, forKey: .rightBundleID)
+            leftName = try container.decodeIfPresent(String.self, forKey: .leftName)
+            rightName = try container.decodeIfPresent(String.self, forKey: .rightName)
+        }
+
+        public static let `default` = AgentPair(
+            leftBundleID: "com.openai.codex",
+            rightBundleID: "com.anthropic.claudefordesktop",
+            leftName: "Codex",
+            rightName: "Claude"
+        )
+
+        /// The pair with each side filled in from the default when the config omitted it.
+        public var resolved: AgentPair {
+            AgentPair(
+                leftBundleID: leftBundleID ?? Self.default.leftBundleID,
+                rightBundleID: rightBundleID ?? Self.default.rightBundleID,
+                leftName: leftName ?? Self.default.leftName,
+                rightName: rightName ?? Self.default.rightName
+            )
+        }
+
+        /// Both sides, left first, empty entries dropped.
+        public var bundleIDs: [String] {
+            [resolved.leftBundleID, resolved.rightBundleID].compactMap { id in
+                guard let id, !id.isEmpty else { return nil }
+                return id
+            }
+        }
+
+        /// The label to show for a bundle ID, when one was configured.
+        public func name(for bundleID: String) -> String? {
+            let pair = resolved
+            if bundleID == pair.leftBundleID { return pair.leftName }
+            if bundleID == pair.rightBundleID { return pair.rightName }
+            return nil
+        }
+
+        /// The side `frontmostBundleID` should switch to: the opposite agent while the user is in
+        /// one of them, otherwise the left side.
+        ///
+        /// Reads the filtered `ids` rather than `resolved.left/right` directly, because a blank side
+        /// is a legitimate way to configure a one-agent pair: the raw field can be `""`, and handing
+        /// that to the activator would try to focus a bundle ID that cannot exist. With one agent,
+        /// both branches answer that same agent — never nothing, never an empty string.
+        public func target(from frontmostBundleID: String?) -> String? {
+            let ids = bundleIDs
+            guard let other = ids.first(where: { $0 != frontmostBundleID }) else {
+                return ids.first
+            }
+            return other
+        }
+    }
 
     public struct KeyBinding: Codable, Equatable, Sendable {
         /// Nil means **modifiers only**, e.g. `{ "modifiers": ["option", "shift"] }` — no character
@@ -100,6 +195,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         profileMode: ProfileMode = .auto,
         autoProfileBundleIDs: [String: String] = AppConfig.defaultAutoProfileBundleIDs,
         fallbackProfile: ToolProfile = .genericTerminal,
+        agentPair: AgentPair = .default,
         tapMaxMs: Double = 220,
         holdMs: Double = 450,
         macrosEnabled: Bool = false,
@@ -114,6 +210,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         self.profileMode = profileMode
         self.autoProfileBundleIDs = autoProfileBundleIDs
         self.fallbackProfile = fallbackProfile
+        self.agentPair = agentPair
         self.tapMaxMs = tapMaxMs
         self.holdMs = holdMs
         self.macrosEnabled = macrosEnabled
@@ -125,7 +222,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, activeProfile, profileMode, autoProfileBundleIDs, fallbackProfile
+        case version, activeProfile, profileMode, autoProfileBundleIDs, fallbackProfile, agentPair
         case tapMaxMs, holdMs
         case macrosEnabled, requireAllowedFrontmostApp, allowedBundleIDs
         case actionKeyOverrides, gestureKeyOverrides, profileGestureKeyOverrides
@@ -146,6 +243,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
             ?? defaults.autoProfileBundleIDs
         fallbackProfile = try container.decodeIfPresent(ToolProfile.self, forKey: .fallbackProfile)
             ?? defaults.fallbackProfile
+        agentPair = try container.decodeIfPresent(AgentPair.self, forKey: .agentPair)
+            ?? defaults.agentPair
         tapMaxMs = try container.decodeIfPresent(Double.self, forKey: .tapMaxMs) ?? defaults.tapMaxMs
         holdMs = try container.decodeIfPresent(Double.self, forKey: .holdMs) ?? defaults.holdMs
         macrosEnabled = try container.decodeIfPresent(Bool.self, forKey: .macrosEnabled) ?? defaults.macrosEnabled
@@ -218,6 +317,19 @@ public struct AppConfig: Codable, Equatable, Sendable {
 
     public var gestureConfiguration: GestureConfiguration {
         GestureConfiguration(tapMaxMs: tapMaxMs, holdMs: holdMs)
+    }
+
+    /// Which app `focusOtherAgent` should put in front, given what is in front right now.
+    ///
+    /// While the user is in one of the two agents this answers "the other one", so a single gesture
+    /// toggles in both directions. From anywhere else — a browser, a terminal, an unknown app — the
+    /// answer is the left side, which keeps the gesture predictable instead of dependent on which
+    /// agent happened to be used last.
+    ///
+    /// Nil means the pair is effectively empty (both sides removed from config), which the
+    /// dispatcher reports rather than silently doing nothing.
+    public func focusOtherAgentTarget(frontmostBundleID: String?) -> String? {
+        agentPair.target(from: frontmostBundleID)
     }
 
     public var guardPolicy: GuardPolicy {
@@ -294,6 +406,9 @@ public final class ConfigStore {
     public let url: URL
     /// Set when the last load found an existing but unreadable file.
     public private(set) var loadWarning: String?
+    /// True while `config` holds defaults because the on-disk file could not be parsed. Any save is
+    /// refused in that state — see `update`.
+    public private(set) var didFailToLoad = false
 
     public static func defaultURL() -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -311,6 +426,7 @@ public final class ConfigStore {
     @discardableResult
     public func load() -> AppConfig {
         loadWarning = nil
+        didFailToLoad = false
         guard FileManager.default.fileExists(atPath: url.path) else {
             // First run: write the defaults out so the file is there to be edited.
             try? save()
@@ -320,7 +436,12 @@ public final class ConfigStore {
             let data = try Data(contentsOf: url)
             config = try JSONDecoder().decode(AppConfig.self, from: data)
         } catch {
-            loadWarning = "could not read \(url.path) (\(error.localizedDescription)); using defaults and leaving the file untouched"
+            // The file exists but we could not understand it. Falling back to defaults is fine for
+            // *this session*, but the file must not be rewritten from those defaults: a single typo
+            // would otherwise silently destroy the user's real settings the next time a menu toggle
+            // saves. `didFailToLoad` closes that door (see `update`).
+            didFailToLoad = true
+            loadWarning = "could not read \(url.path) (\(error.localizedDescription)); using defaults for this session and leaving the file untouched"
             config = AppConfig()
         }
         return config
@@ -336,8 +457,43 @@ public final class ConfigStore {
         try encoder.encode(config).write(to: url, options: .atomic)
     }
 
-    public func update(_ mutate: (inout AppConfig) -> Void) {
+    /// Applies a change and persists it.
+    ///
+    /// Refuses to write when the last `load()` could not parse the file (see `didFailToLoad`), and
+    /// reports that instead of silently overwriting: the menu can carry on with the defaults it is
+    /// showing, while the user's bytes stay on disk to be fixed by hand.
+    @discardableResult
+    public func update(_ mutate: (inout AppConfig) -> Void) -> SaveOutcome {
         mutate(&config)
-        try? save()
+        guard !didFailToLoad else {
+            return .refusedUnreadableConfig
+        }
+        do {
+            try save()
+            return .saved
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+}
+
+/// What happened to a config save. Returned rather than swallowed so a caller can tell the user.
+public enum SaveOutcome: Equatable, Sendable {
+    case saved
+    /// The on-disk config exists but could not be parsed; writing would destroy it.
+    case refusedUnreadableConfig
+    case failed(String)
+
+    public var didWrite: Bool { self == .saved }
+
+    public var message: String? {
+        switch self {
+        case .saved:
+            return nil
+        case .refusedUnreadableConfig:
+            return "config was NOT saved: the existing file could not be parsed, so it was left alone"
+        case .failed(let reason):
+            return "config could NOT be saved: \(reason)"
+        }
     }
 }

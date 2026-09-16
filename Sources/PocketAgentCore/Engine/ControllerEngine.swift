@@ -4,6 +4,12 @@ import Foundation
 /// that keeps the controller core completely unaware of Codex, Claude, or the desktop apps.
 public protocol ActionDispatching: AnyObject {
     func dispatch(_ trigger: ActionTrigger)
+    /// Forget every key-down record without emitting anything.
+    ///
+    /// Called when a controller disappears: the emitter force-releases the keys themselves, so the
+    /// dispatcher's bookkeeping has to be dropped too, or a later stray release would key-up a
+    /// stroke that was already released.
+    func releaseHeldStrokes()
 }
 
 /// Wires the whole controller core together:
@@ -44,6 +50,8 @@ public final class ControllerEngine {
     private var resolver: EventResolver
     private let dispatcher: ActionDispatching
     private var running = false
+    /// The override table in force when the current chord started, kept until that chord releases.
+    private var frozenOverrides: [String: GestureOverride]?
 
     public init(
         dispatcher: ActionDispatching,
@@ -66,21 +74,32 @@ public final class ControllerEngine {
         recognizer.emit = { [weak self] events in
             guard let self else { return }
             self.onGesture?(events)
-            for trigger in self.resolver.triggers(for: events) {
+            for trigger in self.triggers(for: events) {
                 self.dispatcher.dispatch(trigger)
             }
         }
 
         coordinator.onEvent = { [weak self] event in
             guard let self else { return }
-            self.syncGestureOverridesIfNeeded()
             self.onRawEvent?(event)
+            // A release with nothing in flight is not the end of a user gesture: it is cleanup a
+            // source invented for a device that has gone away. Recognising it would let a controller
+            // vanishing fire a B tap or hold — and a hold switches applications. This is the
+            // order-independent form of the guard (it does not care whether the synthetic release
+            // arrives before or after the detach), and it is why the HID source's cleanup cannot
+            // leak even if it runs late.
+            if !event.isPress && self.recognizer.hasNothingInFlight {
+                self.onDiagnostic?("DROPPED release with nothing held — device cleanup, not input")
+                return
+            }
+            self.syncGestureOverridesIfNeeded()
             self.recognizer.handle(event)
         }
         // A controller can vanish mid-gesture; without this the target app keeps whatever key was
         // down, and a half-finished B press stays armed (spec §17, §18).
         coordinator.onDetach = { [weak self] name in
             guard let self else { return }
+            self.dispatcher.releaseHeldStrokes()
             self.recognizer.resetAndEmit()
             self.onControllerDetached?(name)
         }
@@ -96,6 +115,28 @@ public final class ControllerEngine {
         running = false
         coordinator.stop()
         recognizer.resetAndEmit()
+    }
+
+    /// Resolves recognizer events, keeping a start and its end on the **same** override table.
+    ///
+    /// The table can change between the two — the frontmost app moved, the profile was switched, the
+    /// config was reloaded — and a held binding (B+A push-to-talk) that only exists in the old table
+    /// must still be released. So the table is frozen when a chord starts and reused for its
+    /// release, which is then dropped. New tables arriving while a gesture is still in flight are
+    /// ignored rather than clearing the freeze: the release is the very next event to look at it.
+    private func triggers(for events: [ResolvedEvent]) -> [ActionTrigger] {
+        events.flatMap { event -> [ActionTrigger] in
+            if case .gesture(.chordReleased) = event {
+                let triggers = resolver.releaseTriggers(for: event, overrides: frozenOverrides)
+                frozenOverrides = nil
+                return triggers
+            }
+            let table = frozenOverrides ?? resolver.gestureOverrides
+            if case .gesture(.chord) = event {
+                frozenOverrides = table
+            }
+            return resolver.pressTriggers(for: event, overrides: table)
+        }
     }
 
     /// Swaps the resolver only when the override table actually changed — the frontmost app is

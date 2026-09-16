@@ -18,10 +18,21 @@ final class GestureRecognizerTests: XCTestCase {
         XCTAssertEqual(harness.emitted, [.gesture(.tap(.b))])
     }
 
-    func testBSlowReleaseBecomesAHold() {
+    func testBSlowReleaseBeforeTheHoldThresholdIsStillATap() {
+        // `tapMaxMs` no longer decides tap-vs-hold on its own: `holdMs` does, because a hold now
+        // switches applications. 300 ms is a slow tap, not a hold — and definitely not an app switch.
         let harness = Harness()
         harness.press(.b)
         harness.advance(to: 0.300) // past tapMax, before the hold threshold
+        harness.release(.b)
+
+        XCTAssertEqual(harness.gestures, [.tap(.b)])
+    }
+
+    func testBReleasedExactlyAtTheHoldThresholdIsAHold() {
+        let harness = Harness()
+        harness.press(.b)
+        harness.advance(to: hold) // the hold timer fires here
         harness.release(.b)
 
         XCTAssertEqual(harness.gestures, [.hold(.b)])
@@ -47,6 +58,51 @@ final class GestureRecognizerTests: XCTestCase {
     }
 
     // MARK: - Chords (spec §6.2)
+
+    func testFinishVoiceInputAfterALongBHoldDoesNotAlsoEmitEscape() {
+        // Found while fixing the app-switch threshold (2026-09-16): once B passes `holdMs` the state
+        // is "ready because the timer fired", and a chord that then takes the press used to leave
+        // that flag set, so releasing B fired the hold *and* the chord emitted a stray Escape at the
+        // end of a voice input.
+        let harness = Harness()
+        harness.press(.b)
+        harness.advance(to: 0.600)        // past holdMs: B is a modifier now
+        harness.press(.a)                 // push-to-talk chord
+        harness.advance(to: 0.700)
+        harness.release(.a)
+        harness.advance(to: 1.400)
+        harness.release(.b)
+
+        XCTAssertEqual(harness.actionGestures, [.chord(modifier: .b, key: .a)])
+        XCTAssertFalse(
+            harness.emitted.contains(.gesture(.hold(.b))),
+            "finishing a chord must not switch applications"
+        )
+        XCTAssertFalse(
+            harness.emitted.contains(.gesture(.tap(.b))),
+            "finishing a chord must not also send Escape"
+        )
+    }
+
+    func testBIsIgnoredWhileAIsAlreadyHeld() {
+        // The mirror image: release A during push-to-talk, then press and release B. B used to start
+        // its own press here, so the tail of a voice input ended in an app switch.
+        let harness = Harness()
+        harness.press(.b)
+        harness.advance(to: 0.050)
+        harness.press(.a)
+        harness.advance(to: 0.100)
+        harness.release(.a)
+        harness.advance(to: 0.120)
+        harness.press(.b)                 // spurious; A was held when this arrived
+        harness.advance(to: 1.000)
+        harness.release(.b)
+
+        XCTAssertFalse(
+            harness.emitted.contains(.gesture(.hold(.b))),
+            "a B press that arrives while A is down must not become an app switch"
+        )
+    }
 
     func testBPlusUpJumpsToRecentChat1() {
         assertChord(.up, resolvesTo: .goToRecentChat1)

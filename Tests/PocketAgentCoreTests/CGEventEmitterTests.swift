@@ -113,6 +113,38 @@ final class CGEventEmitterTests: XCTestCase {
         XCTAssertTrue(poster.events.isEmpty, "nothing was held, so nothing should be posted")
     }
 
+    func testAKeypressDoesNotReleaseAModifierAnotherGestureIsHolding() {
+        // Found by review (2026-09-16). While push-to-talk holds ⌥, an unrelated one-shot key must
+        // not treat that ⌥ as a leftover and cancel the voice input.
+        let (emitter, poster) = makeEmitter()
+        emitter.performKeyDown(KeyStroke(modifiers: [.rightOption]))   // voice input starts
+        poster.reset()
+
+        emitter.performPress(.key(.escape))                            // B tap during the hold
+
+        XCTAssertFalse(
+            poster.keyCodes.contains(ModifierKey.rightOption.keyCode),
+            "the deliberately held ⌥ must survive an unrelated press"
+        )
+    }
+
+    func testOnlyTheKeypressesOwnModifiersAreReleasedWithIt() {
+        // The held ⌥ belongs to another gesture, so releasing this key must not pop it either.
+        let (emitter, poster) = makeEmitter()
+        emitter.performKeyDown(KeyStroke(modifiers: [.rightOption]))
+        emitter.performKeyDown(KeyStroke(.rightArrow, modifiers: [.command]))
+        poster.reset()
+
+        emitter.performKeyUp(KeyStroke(.rightArrow, modifiers: [.command]))
+
+        XCTAssertEqual(
+            poster.keyCodes,
+            [Key.rightArrow.keyCode, ModifierKey.command.keyCode],
+            "only this key's own ⌘ may be released"
+        )
+        XCTAssertFalse(poster.keyCodes.contains(ModifierKey.rightOption.keyCode))
+    }
+
     func testRightSideModifiersUseTheirOwnKeyCodes() {
         // Doubao distinguishes 长按右option from its left-hand shortcuts, so the two sides must not
         // collapse into one key code.

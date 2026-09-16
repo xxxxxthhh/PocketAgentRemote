@@ -21,10 +21,15 @@ final class AppEnvironment {
 
     private(set) var engine: ControllerEngine
     private(set) var dispatcher: ActionDispatcher
+    /// Raises one of the two agent apps. Also used by the menu's manual smoke action.
+    let activator: AppActivator
 
     private(set) var connectedDevice: String?
     private(set) var isAccessibilityGranted: Bool
     private(set) var inputMonitoringState: InputMonitoringPermission.State
+    /// The last "focus the other agent" result, shown in the menu so the feature is observable
+    /// without opening the debug log.
+    private(set) var lastActivationSummary: String?
 
     /// Called whenever anything the menu displays changes.
     var onStatusChange: (() -> Void)?
@@ -35,13 +40,16 @@ final class AppEnvironment {
 
         let emitter = CGEventEmitter()
         let observer = frontmostObserver
+        let activator = AppActivator(frontmost: observer)
+        self.activator = activator
 
         // The dispatcher reads config live, so profile/allowlist changes take effect immediately.
         let store = configStore
         dispatcher = ActionDispatcher(
             configProvider: { store.config },
             frontmost: observer,
-            emitter: emitter
+            emitter: emitter,
+            activator: activator
         )
 
         engine = ControllerEngine(
@@ -83,6 +91,14 @@ final class AppEnvironment {
             let label = action?.rawValue ?? "<gesture override>"
             self?.debugLog.append("DENY", "\(label): \(reason)")
         }
+        // Focusing an app emits no keystroke, so it gets its own line: otherwise a press that did
+        // nothing would look identical to a press that was never recognised.
+        dispatcher.onActivation = { [weak self] action, outcome in
+            guard let self else { return }
+            self.debugLog.append("FOCUS", "\(action.rawValue): \(AppActivationReport.describe(outcome))")
+            self.lastActivationSummary = AppActivationReport.describe(outcome)
+            self.onStatusChange?()
+        }
 
         // In auto mode the profile follows the frontmost app, so the gesture table is re-resolved
         // before every event.
@@ -120,6 +136,25 @@ final class AppEnvironment {
     }
 
     // MARK: - Menu actions
+
+    /// Manual smoke test for the cross-app switch: same code path the gesture uses, minus the
+    /// controller. Useful because "the button did nothing" and "the app was not running" look
+    /// identical from the sofa.
+    @discardableResult
+    func focusOtherAgentNow() -> AppActivationOutcome? {
+        let config = configStore.config
+        guard let target = config.focusOtherAgentTarget(
+            frontmostBundleID: frontmostObserver.frontmostBundleID()
+        ) else {
+            debugLog.append("FOCUS", "manual: the agent pair in config is empty")
+            return nil
+        }
+        let outcome = activator.activate(bundleID: target)
+        lastActivationSummary = AppActivationReport.describe(outcome)
+        debugLog.append("FOCUS", "manual: \(lastActivationSummary ?? "")")
+        onStatusChange?()
+        return outcome
+    }
 
     /// The profile in force right now — in auto mode this follows the frontmost application.
     var activeProfile: ToolProfile {

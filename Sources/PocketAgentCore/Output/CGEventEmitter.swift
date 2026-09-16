@@ -49,6 +49,9 @@ public final class CGEventEmitter: InputEmitting {
     private let poster: KeyboardEventPosting
     private var heldModifiers: Set<ModifierKey> = []
     private var heldKeys: Set<CGKeyCode> = []
+    /// Which modifiers each held key itself pushed, so its release does not pop modifiers that
+    /// belong to a different, still-running gesture.
+    private var heldKeyModifiers: [CGKeyCode: Set<ModifierKey>] = [:]
 
     /// Gap between the individual key events of a **modifier-only** tap.
     ///
@@ -103,7 +106,9 @@ public final class CGEventEmitter: InputEmitting {
                 if index > 0 { Thread.sleep(forTimeInterval: modifierTapGap) }
                 popModifier(modifier)
             }
-            cleanupIfIdle()
+            // Only modifiers this press pushed can be leftovers; anything else is deliberately held
+            // by another gesture (the push-to-talk ⌥) and must survive.
+            cleanupIfIdle(releasing: Set(modifiers))
             return
         }
 
@@ -114,24 +119,32 @@ public final class CGEventEmitter: InputEmitting {
             postUp(key.keyCode, flags: flags(adding: []))
         }
         for modifier in modifiers.reversed() { popModifier(modifier) }
-        cleanupIfIdle()
+        cleanupIfIdle(releasing: Set(modifiers))
     }
 
     func performKeyDown(_ stroke: KeyStroke) {
-        for modifier in ordered(stroke.modifiers) { pushModifier(modifier) }
+        let modifiers = ordered(stroke.modifiers)
+        for modifier in modifiers { pushModifier(modifier) }
         if let key = stroke.key {
             postDown(key.keyCode, flags: flags(adding: []))
             heldKeys.insert(key.keyCode)
+            // The stroke's key is down; remember which modifiers *this* keyDown pushed, so its keyUp
+            // can release exactly those and leave a modifier that another gesture is holding alone.
+            heldKeyModifiers[key.keyCode] = Set(modifiers)
         }
     }
 
     func performKeyUp(_ stroke: KeyStroke) {
+        var owned: Set<ModifierKey> = []
         if let key = stroke.key {
             postUp(key.keyCode, flags: flags(adding: []))
             heldKeys.remove(key.keyCode)
+            owned = heldKeyModifiers.removeValue(forKey: key.keyCode) ?? Set(stroke.modifiers)
+        } else {
+            owned = Set(stroke.modifiers)
         }
-        for modifier in ordered(stroke.modifiers).reversed() { popModifier(modifier) }
-        cleanupIfIdle()
+        for modifier in ordered(owned) { popModifier(modifier) }
+        cleanupIfIdle(releasing: owned)
     }
 
     func performReleaseAll() {
@@ -139,6 +152,7 @@ public final class CGEventEmitter: InputEmitting {
         let modifiers = heldModifiers
         heldKeys.removeAll()
         heldModifiers.removeAll()
+        heldKeyModifiers.removeAll()
         for key in keys.sorted() { postUp(key, flags: []) }
         for modifier in ordered(modifiers) { postUp(modifier.keyCode, flags: []) }
     }
@@ -149,12 +163,19 @@ public final class CGEventEmitter: InputEmitting {
         modifiers.sorted { $0.rawValue < $1.rawValue }
     }
 
-    /// Nothing is mid-recipe; a leftover modifier at this point is always a bug, so fail safe
-    /// rather than leak a stuck Shift/Option into the user's session.
-    private func cleanupIfIdle() {
+    /// Nothing is mid-recipe; a modifier this operation pushed but never popped would leak a stuck
+    /// Shift/Option into the user's session, so fail safe and release it.
+    ///
+    /// `releasing` bounds the cleanup to modifiers **this operation** pushed. Releasing every held
+    /// modifier was wrong once gestures could hold one deliberately: the voice-input chord keeps ⌥
+    /// down until A is released, and an unrelated keypress during it used to cancel the voice input
+    /// by releasing that ⌥ as if it were a leftover.
+    private func cleanupIfIdle(releasing candidates: Set<ModifierKey> = []) {
         guard !heldModifiers.isEmpty && heldKeys.isEmpty else { return }
-        for modifier in ordered(heldModifiers) { postUp(modifier.keyCode, flags: []) }
-        heldModifiers.removeAll()
+        for modifier in ordered(heldModifiers.intersection(candidates)) {
+            postUp(modifier.keyCode, flags: [])
+        }
+        heldModifiers.subtract(candidates)
     }
 
     private func pushModifier(_ modifier: ModifierKey) {

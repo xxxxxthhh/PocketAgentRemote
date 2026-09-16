@@ -141,6 +141,33 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(after, broken, "a hand-edited config with a typo must survive")
     }
 
+    func testMenuUpdateRefusesToOverwriteAnUnreadableConfig() throws {
+        // Found by review (2026-09-16). The read half of this was already safe — `load` leaves the
+        // file alone — but any later menu toggle wrote the *defaults* straight over it, silently
+        // destroying the user's real settings over one typo.
+        let original = #"{"gestureKeyOverrides":{"b.a":{"modifiers":["typo"]}}}"#
+        try original.write(to: storeURL(), atomically: true, encoding: .utf8)
+
+        let store = ConfigStore(url: storeURL())
+        store.load()
+        XCTAssertTrue(store.didFailToLoad)
+
+        let outcome = store.update { $0.profileMode = .manual }
+
+        XCTAssertEqual(outcome, .refusedUnreadableConfig)
+        XCTAssertNotNil(outcome.message)
+        let after = try String(contentsOf: storeURL(), encoding: .utf8)
+        XCTAssertEqual(after, original, "a menu setting must not destroy an unparseable user config")
+    }
+
+    func testUpdateReportsSuccessAndActuallyPersists() throws {
+        let store = ConfigStore(url: storeURL())
+        store.load()
+
+        XCTAssertEqual(store.update { $0.macrosEnabled = true }, .saved)
+        XCTAssertTrue(try String(contentsOf: storeURL(), encoding: .utf8).contains("\"macrosEnabled\" : true"))
+    }
+
     func testOverridesIgnoreUnknownActionNames() {
         var config = AppConfig()
         config.actionKeyOverrides = [

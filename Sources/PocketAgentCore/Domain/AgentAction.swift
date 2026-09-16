@@ -58,6 +58,19 @@ public enum AgentAction: String, Codable, CaseIterable, Sendable {
     /// the v0.1 name `cyclePermissionMode` was simply wrong. Adapters must report it as
     /// unsupported on Codex rather than silently substituting an approval.
     case openPermissionModeMenu
+
+    // MARK: Cross-app
+    //
+    // The one action that does **not** describe keystrokes for a tool. "Put the other agent in
+    // front" is a system effect: it is what lets the user jump between Codex and Claude without
+    // touching the keyboard, and it is precisely the situation where no keystroke may be sent —
+    // the frontmost app is often a browser or a terminal, where every tool-specific chord is
+    // (correctly) blocked by the guard while this one must still work.
+    //
+    // Hence: no adapter can express it as a recipe, `ActionDispatcher` handles it directly, and it
+    // is exempt from the allowlist for the same reason a modifier-only stroke is (see
+    // `ActionDispatcher.dispatch`).
+    case focusOtherAgent
 }
 
 /// How risky an action is to fire (spec §10.5). Drives the guard rules in spec §12/§17.
@@ -95,6 +108,18 @@ public enum OutputStep: Equatable, Sendable {
     case text(String)
 }
 
+/// What running a recipe actually does.
+///
+/// Almost everything a recipe describes is a keystroke. `activateAgentApp` is the exception, and it
+/// is a separate case rather than "a recipe with no steps" because those two things must not be
+/// confused: an empty keystroke recipe is a bug, while focusing an app is a deliberate system effect
+/// that carries no keystroke at all. `ActionDispatcher` branches on this before the keystroke path.
+public enum RecipeEffect: Equatable, Sendable {
+    case keystroke
+    /// Bring the other configured agent (Codex ⇄ Claude) to the front. No keystroke is emitted.
+    case activateAgentApp
+}
+
 /// A complete, pre-validated recipe for one semantic action (spec §10.5, extended with the
 /// key-repeat policy from spec §19).
 public struct OutputRecipe: Equatable, Sendable {
@@ -105,17 +130,21 @@ public struct OutputRecipe: Equatable, Sendable {
     public var requiresExplicitProfile: Bool
     /// True when holding the input may repeat this recipe. Navigation only.
     public var allowsRepeat: Bool
+    /// What the recipe does. Keystrokes for everything except the cross-app focus action.
+    public var effect: RecipeEffect
 
     public init(
         steps: [OutputStep],
         risk: ActionRisk,
         requiresExplicitProfile: Bool = false,
-        allowsRepeat: Bool = false
+        allowsRepeat: Bool = false,
+        effect: RecipeEffect = .keystroke
     ) {
         self.steps = steps
         self.risk = risk
         self.requiresExplicitProfile = requiresExplicitProfile
         self.allowsRepeat = allowsRepeat
+        self.effect = effect
     }
 }
 
@@ -125,6 +154,17 @@ public extension AgentAction {
         switch self {
         case .navigateUp, .navigateDown, .navigateLeft, .navigateRight: return true
         default: return false
+        }
+    }
+
+    /// The effect this action has when it runs, independent of any tool profile.
+    ///
+    /// Only `focusOtherAgent` is a system effect; everything else is a keystroke aimed at the
+    /// frontmost application.
+    var recipeEffect: RecipeEffect {
+        switch self {
+        case .focusOtherAgent: return .activateAgentApp
+        default: return .keystroke
         }
     }
 
@@ -139,6 +179,7 @@ public extension AgentAction {
              .goToRecentChat4, .goToRecentChat5, .goToRecentChat6,
              .nextChatNeedingAttention:
             return .sensitive
+        case .focusOtherAgent: return .sensitive
         }
     }
 }

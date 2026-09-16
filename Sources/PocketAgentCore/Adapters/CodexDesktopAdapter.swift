@@ -69,6 +69,10 @@ public struct CodexDesktopAdapter: ToolAdapter {
         case .goToRecentChat6: return .supported(Recipe.tool(.digit6, [.command, .option]))
         case .nextChatNeedingAttention: return .supported(Recipe.tool(.a, [.command, .option]))
 
+        // Cross-app: sends nothing to Codex. Supported here so a profile is never the reason the
+        // user's "switch agent" button did nothing.
+        case .focusOtherAgent: return .supported(Recipe.system(.activateAgentApp))
+
         case .openPermissionModeMenu:
             return .unsupported("Codex desktop has no permission-mode action (only approve/decline)")
 

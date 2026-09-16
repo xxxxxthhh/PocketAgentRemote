@@ -118,6 +118,53 @@ Codex 有 3 个动作**没有默认快捷键**，需要一次性配置：
 
 ---
 
+## I. 切到另一个 agent（`B 长按`）—— 待你按手柄 ✅/❌
+
+代码、单测、打包、以及「用真实 `AppActivator` 切换真实 App」都已经验过
+（浏览器 → Codex → Claude → Codex → Claude 四次全通过），**只有「按住手柄 B」这一下需要你来按**。
+
+> 2026-09-16 一轮外部代码审查提出的 6 条问题已全部修复，其中 3 条会影响真机手感，已在下面加了
+> 5b / 5c / 7 三项：长按门槛改为 450 ms、chord 结束后不再补发取消、断连不再自己切 App。
+
+准备：两个 App 都先打开（`ChatGPT.app` 和 `Claude.app`）。重新构建并启动 App：
+
+```bash
+POCKETAGENT_SWIFTPM_FLAGS=--disable-sandbox ./scripts/make-agent-app.sh release
+open build/PocketAgentRemote.app
+```
+
+| # | 操作 | 期望 | 结果 |
+|---|---|---|---|
+| 1 | 菜单 → `Focus Other Agent Now` | 前台切到另一个 agent，菜单出现 `Last switch: focused … via appleScript` | |
+| 2 | 焦点在 Codex，**按住 B 约 1 秒后松开** | 切到 Claude | |
+| 3 | 焦点在 Claude，**按住 B 约 1 秒后松开** | 切回 Codex | |
+| 4 | 焦点在浏览器/终端，**按住 B** | 切到 **Codex**（`left` 槽） | |
+| 5 | 焦点在 Codex，**轻按 B**（<220 ms） | 仍然是 `Escape`（取消），**不**切 App | |
+| 5b | 焦点在 Codex，按住 B **约 300 ms** 后松开 | 仍然是 `Escape`（取消），**不**切 App（门槛是 450 ms） | |
+| 5c | 按住 `B+A` 语音输入，说完先松 A 再松 B | 只结束语音输入，**不**切 App、**不**多发一次取消 | |
+| 6 | 在 Codex 的审批弹层里**轻按 B** | 拒绝（弹层消失），确认「拒绝」没被切 App 顶掉 | |
+| 7 | 按着 B（或 ⬆⬇⬅➡）直接关掉手柄电源 / 走远断连 | **不该**发生切 App；日志有 `detached`，且没有 `FOCUS` 行 | |
+
+同时看一眼日志，应当每次都有且只有一行 `FOCUS`：
+
+```bash
+tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
+```
+
+```text
+FOCUS  focusOtherAgent: focused com.anthropic.claudefordesktop via appleScript in 80 ms
+```
+
+**如果第 2/3 步没反应**，把日志发我，重点看：
+
+- 有没有 `GESTURE hold(b)` —— 没有 = 手柄没触发长按（`holdMs` 默认 450 ms，按住时间要够）。
+- 有没有 `FOCUS` 行 —— 有但 `failed` = 切换被系统拒绝，行尾会逐个列出试过的方法和原因。
+- 若日志里出现 AppleScript 权限相关错误（`err=-1743` 之类），去
+  **系统设置 → 隐私与安全性 → 自动化** 里给 PocketAgentRemote 勾上 ChatGPT / Claude。
+  本机实测**没有**弹这个框、也没有被拦，但换机器/换系统版本可能不同。
+
+---
+
 ## H. 语音输入（B + A）—— 已验证 ✅
 
 2026-09-16 实测通过。用的是配置里的修饰键手势，不是内置语义动作。

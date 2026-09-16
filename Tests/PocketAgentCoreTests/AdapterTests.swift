@@ -99,8 +99,23 @@ final class AdapterTests: XCTestCase {
 
         for action in AgentAction.allCases where action != .navigateUp && action != .navigateDown
             && action != .navigateLeft && action != .navigateRight
-            && action != .submit && action != .cancelOrInterrupt {
+            && action != .submit && action != .cancelOrInterrupt
+            && action != .focusOtherAgent {
             XCTAssertNil(generic.support(for: action).recipe, "\(action) must not fire from the generic profile")
+        }
+    }
+
+    func testAgentSwitchIsAvailableOnEveryProfileAndCarriesNoKeystroke() {
+        // The cross-app switch is the one action that must work from anywhere, including the
+        // generic profile: its use case is "I am in a browser and want the agent back", which is
+        // exactly when no tool profile is active. It also must never look like a keystroke, or the
+        // guard's allowlist rule would apply to it — and the debug log would claim a key was sent.
+        for adapter in [codex as ToolAdapter, claude, generic] {
+            let support = adapter.support(for: .focusOtherAgent)
+            XCTAssertEqual(support.recipe?.effect, .activateAgentApp)
+            XCTAssertTrue(support.recipe?.steps.isEmpty ?? false)
+            XCTAssertNil(support.recipe?.primaryStroke)
+            XCTAssertFalse(support.recipe?.requiresExplicitProfile ?? true)
         }
     }
 

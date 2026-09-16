@@ -28,8 +28,16 @@ public final class GestureRecognizer {
 
     private enum BState: Equatable {
         case idle
+        /// B is down but the hold timer has not fired.
         case pending(since: TimeInterval)
-        case ready
+        /// The hold timer fired and/or a chord key made B a modifier.
+        ///
+        /// Both flags are needed to decide what releasing B means:
+        /// - `holdFired` separates a real hold (switch agent) from a press that merely outlived the
+        ///   old `tapMaxMs` threshold, which stays a tap;
+        /// - `occupiedByChord` suppresses B's own gesture once a chord has taken the press, so
+        ///   finishing push-to-talk cannot also fire a stray Escape.
+        case ready(holdFired: Bool, occupiedByChord: Bool)
     }
 
     /// Mutable so a config reload takes effect without relaunching the app. A change only affects
@@ -42,6 +50,9 @@ public final class GestureRecognizer {
     private var heldDirections: Set<PhysicalButton> = []
     private var chordKey: PhysicalButton?
     private var holdToken: GestureSchedulerToken?
+    /// True while A is physically down. B pressed during that is ignored: A is never a layer key, so
+    /// a B that arrives after it cannot start a chord or a hold.
+    private var aIsDown = false
     /// True while the current B press has already been consumed by a chord. It stays set until B is
     /// released — clearing it when the chord *key* is released would let B's release emit Escape
     /// afterwards, which is exactly the stuck-Escape bug the tests catch.
@@ -53,6 +64,15 @@ public final class GestureRecognizer {
     ) {
         self.configuration = configuration
         self.scheduler = scheduler
+    }
+
+    /// True when nothing is physically down as far as this recognizer knows.
+    ///
+    /// Used to decide whether a *release* still means something: with no press outstanding there is
+    /// nothing that release could be ending, which is the signature of cleanup invented by a source
+    /// (a device that vanished) rather than input from a user.
+    public var hasNothingInFlight: Bool {
+        bState == .idle && heldDirections.isEmpty && chordKey == nil
     }
 
     // MARK: - Input
@@ -77,6 +97,7 @@ public final class GestureRecognizer {
         holdToken = nil
         bState = .idle
         bConsumedByChord = false
+        aIsDown = false
 
         var output: [ResolvedEvent] = []
         // A held (modifier-only) chord must be released too, or the user's session inherits a stuck
@@ -101,9 +122,15 @@ public final class GestureRecognizer {
 
     private func handlePress(_ button: PhysicalButton, at timestamp: TimeInterval) -> [ResolvedEvent] {
         if button == .b {
-            guard bState == .idle else { return [] }
-            bState = .pending(since: timestamp)
-            armHoldTimer()
+            // A already being held means this is not a B press the user intends as a gesture: A is
+            // never a layer key, so a B arriving after it must not start a chord or a hold. Letting
+            // it do so is how releasing A during push-to-talk turned the tail of a voice input into
+            // an app switch.
+            if !aIsDown {
+                guard bState == .idle else { return [] }
+                bState = .pending(since: timestamp)
+                armHoldTimer()
+            }
             return []
         }
 
@@ -114,7 +141,13 @@ public final class GestureRecognizer {
             bConsumedByChord = true
             holdToken?.cancel()
             holdToken = nil
-            bState = .ready
+            if case .ready(let holdFired, _) = bState {
+                // A chord had already made B a modifier, and the hold timer may have fired before
+                // that. Keep both facts: the release must neither switch apps nor emit Escape.
+                bState = .ready(holdFired: holdFired, occupiedByChord: true)
+            } else {
+                bState = .ready(holdFired: false, occupiedByChord: true)
+            }
             return [.gesture(.chord(modifier: .b, key: button))]
         }
 
@@ -126,10 +159,15 @@ public final class GestureRecognizer {
         }
 
         // A must never repeat, so it is a complete press in one go.
+        aIsDown = true
         return [.keyDown(button), .keyUp(button)]
     }
 
     private func handleRelease(_ button: PhysicalButton, at timestamp: TimeInterval) -> [ResolvedEvent] {
+        if button == .a {
+            aIsDown = false
+        }
+
         if button == .b {
             let consumed = bConsumedByChord
             bConsumedByChord = false
@@ -138,20 +176,25 @@ public final class GestureRecognizer {
             case .idle:
                 return []
 
-            case .pending(let since):
+            case .pending:
                 holdToken?.cancel()
                 holdToken = nil
                 bState = .idle
                 if consumed { return [] }
-                let elapsedMs = (timestamp - since) * 1000
-                return [.gesture(elapsedMs <= configuration.tapMaxMs ? .tap(.b) : .hold(.b))]
+                // `tapMaxMs` alone used to decide this, which made `holdMs` decorative: a 300 ms
+                // press was announced as a *hold* even though the documented hold threshold is
+                // 450 ms. That was harmless while a hold meant "the same as a tap" (Escape), but a
+                // hold now switches applications, and guessing wrong there is destructive — so a
+                // hold is only reported once the hold timer has actually fired, and anything
+                // shorter is a (deliberately late) tap.
+                return [.gesture(.tap(.b))]
 
-            case .ready:
+            case .ready(let holdFired, let occupiedByChord):
                 bState = .idle
                 // A chord owns this B press: releasing B must never also emit Escape, whether the
                 // chord key is still held or was already released.
-                if consumed { return [] }
-                return [.gesture(.hold(.b))]
+                if consumed || occupiedByChord { return [] }
+                return [.gesture(holdFired ? .hold(.b) : .tap(.b))]
             }
         }
 
@@ -178,8 +221,9 @@ public final class GestureRecognizer {
     private func holdTimerFired() {
         holdToken = nil
         guard case .pending = bState else { return }
-        bState = .ready
-        // No output: B only becomes a modifier at this point.
+        bState = .ready(holdFired: true, occupiedByChord: false)
+        // Still no output: becoming a modifier emits nothing on its own. The hold action fires when
+        // B is released, which is also what keeps `holdMs` — not `tapMaxMs` — the deciding threshold.
     }
 
     private func deliver(_ events: [ResolvedEvent]) {

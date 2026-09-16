@@ -18,6 +18,12 @@ public protocol ControllerInputSource: AnyObject {
     var onAttach: ((String) -> Void)? { get set }
     /// Fires when that controller goes away. Callers must reset gesture state here (spec §17/§18).
     var onDetach: ((String) -> Void)? { get set }
+    /// The source is about to tear a device down and may emit cleanup events before `onDetach`.
+    ///
+    /// A source that synthesises releases for whatever it believed was held announces it here first,
+    /// so the coordinator can mark the whole window as "not user input" from the start instead of
+    /// depending on the order in which the releases and the detach happen to arrive.
+    var onWillDetach: (() -> Void)? { get set }
 
     func start()
     func stop()

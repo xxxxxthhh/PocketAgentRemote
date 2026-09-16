@@ -74,4 +74,14 @@ enum Recipe {
             requiresExplicitProfile: true
         )
     }
+
+    /// A non-keystroke system effect, valid on **every** profile.
+    ///
+    /// Modelled as an `OutputRecipe` so every action still yields one uniform `ActionSupport`, and
+    /// so the "unsupported" path keeps its meaning: a recipe is either something to run or an
+    /// explanation of why not. `ActionDispatcher` acts on `effect` before the keystroke path, so the
+    /// empty `steps` are never read as a broken recipe.
+    static func system(_ effect: RecipeEffect, risk: ActionRisk = .sensitive) -> OutputRecipe {
+        OutputRecipe(steps: [], risk: risk, requiresExplicitProfile: false, effect: effect)
+    }
 }

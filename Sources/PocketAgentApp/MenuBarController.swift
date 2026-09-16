@@ -52,6 +52,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             menu.addItem(disabled("Profile: \(profileTitle(environment.activeProfile))  (manual)"))
         }
         menu.addItem(disabled("Frontmost: \(environment.frontmostObserver.frontmostAppName() ?? "unknown")"))
+        if let summary = environment.lastActivationSummary {
+            menu.addItem(disabled("Last switch: \(summary)"))
+        }
         menu.addItem(.separator())
 
         // Profile mode — auto follows the frontmost app.
@@ -131,6 +134,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         monitorItem.target = self
         menu.addItem(monitorItem)
 
+        // Same path as holding B: lets the user verify the switch without the controller in hand.
+        let switchItem = NSMenuItem(title: "Focus Other Agent Now", action: #selector(focusOtherAgent), keyEquivalent: "")
+        switchItem.target = self
+        menu.addItem(switchItem)
+
         let configItem = NSMenuItem(title: "Open Config File", action: #selector(openConfig), keyEquivalent: "")
         configItem.target = self
         menu.addItem(configItem)
@@ -209,6 +217,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             monitor = DebugMonitorWindowController(log: environment.debugLog)
         }
         monitor?.show()
+    }
+
+    @objc private func focusOtherAgent() {
+        environment.focusOtherAgentNow()
     }
 
     @objc private func openConfig() {

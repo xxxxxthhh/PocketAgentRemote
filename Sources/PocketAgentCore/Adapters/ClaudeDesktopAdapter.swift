@@ -45,6 +45,9 @@ public struct ClaudeDesktopAdapter: ToolAdapter {
         case .queueFollowUp:
             return .unsupported("Claude desktop has no queue action; ⌘⌥Enter forks a session instead")
 
+        // Cross-app: sends nothing to Claude, so it works on every profile (see CodexDesktopAdapter).
+        case .focusOtherAgent: return .supported(Recipe.system(.activateAgentApp))
+
         case .newChat, .archiveChat, .pinThread, .forkThread, .openSideChat,
              .goToRecentChat1, .goToRecentChat2, .goToRecentChat3,
              .goToRecentChat4, .goToRecentChat5, .goToRecentChat6,

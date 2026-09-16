@@ -18,26 +18,85 @@ public final class ActionDispatcher: ActionDispatching {
     public var onDenied: ((AgentAction?, String) -> Void)?
     /// An action that was actually sent. Nil action = a raw gesture override.
     public var onEmitted: ((AgentAction?, KeyStroke) -> Void)?
+    /// A cross-app focus ran (successfully or not), with a human-readable outcome.
+    ///
+    /// Separate from `onEmitted` on purpose: focusing an app emits no keystroke, and reporting it as
+    /// a keystroke would make the debug log claim something happened in the target app that did not.
+    public var onActivation: ((AgentAction, AppActivationOutcome) -> Void)?
 
     private let configProvider: () -> AppConfig
     private let frontmost: FrontmostAppProviding
     private let emitter: InputEmitting
+    private let activator: AppActivating?
+
+    /// What each currently-held key was actually emitted as.
+    ///
+    /// A key that is still down must be released with **the stroke that went down**, not with
+    /// whatever the current profile/guard/override table would produce now. Two real failures came
+    /// from re-deciding at release time:
+    ///
+    /// - the guard re-checked the *current* frontmost app, so releasing an arrow key after focus
+    ///   moved off the allowlist was denied and the key stayed down;
+    /// - a held gesture override (B+A voice input) whose override disappeared mid-chord — profile
+    ///   switch, config reload, frontmost app change — resolved to nothing at all, so the release
+    ///   was never sent and the modifier stayed down.
+    ///
+    /// Keyed by action and, separately, by stroke for gesture overrides (which have no action).
+    private var heldByAction: [AgentAction: KeyStroke] = [:]
+    private var heldRawStrokes: Set<KeyStroke> = []
 
     public init(
         configProvider: @escaping () -> AppConfig,
         frontmost: FrontmostAppProviding,
-        emitter: InputEmitting
+        emitter: InputEmitting,
+        activator: AppActivating? = nil
     ) {
         self.configProvider = configProvider
         self.frontmost = frontmost
         self.emitter = emitter
+        self.activator = activator
+    }
+
+    public func releaseHeldStrokes() {
+        heldByAction.removeAll()
+        heldRawStrokes.removeAll()
+    }
+
+    /// Handles `focusOtherAgent`: resolve the target from the configured pair and raise it.
+    ///
+    /// Every exit is reported — an app that is not running, a missing pair, a failed AppleScript —
+    /// because this action produces no keystroke, so nothing else in the log would show that the
+    /// user's button press did nothing.
+    private func performFocus(
+        _ action: AgentAction,
+        frontmostBundleID: String?,
+        config: AppConfig
+    ) {
+        guard let target = config.focusOtherAgentTarget(frontmostBundleID: frontmostBundleID) else {
+            onDiagnostic?("SKIP  \(action.rawValue): the agent pair in config is empty")
+            return
+        }
+
+        guard let activator else {
+            onDiagnostic?("SKIP  \(action.rawValue): app activation is not wired up in this build")
+            return
+        }
+
+        let outcome = activator.activate(bundleID: target)
+        // Reported through the dedicated hook, not `onDiagnostic`: one line per activation attempt,
+        // written by the app under its own tag.
+        onActivation?(action, outcome)
     }
 
     private func emitRaw(_ stroke: KeyStroke, phase: KeyPhase, frontmostBundleID: String?) {
         switch phase {
         case .press: emitter.press(stroke)
-        case .down: emitter.keyDown(stroke)
-        case .up: emitter.keyUp(stroke)
+        case .down:
+            emitter.keyDown(stroke)
+            heldRawStrokes.insert(stroke)
+        case .up:
+            emitter.keyUp(stroke)
+            heldRawStrokes.remove(stroke)
         }
         onEmitted?(nil, stroke)
         let label = { () -> String in
@@ -48,6 +107,19 @@ public final class ActionDispatcher: ActionDispatching {
             }
         }()
         onDiagnostic?("SEND  \(label) <gesture override> → \(stroke.description) → \(frontmostBundleID ?? "?")")
+    }
+
+    /// A key-down that is still outstanding, with the stroke it must eventually be released with.
+    private func heldStroke(for action: AgentAction) -> KeyStroke? {
+        heldByAction[action]
+    }
+
+    private func remember(_ stroke: KeyStroke, for action: AgentAction) {
+        heldByAction[action] = stroke
+    }
+
+    private func forget(_ action: AgentAction) {
+        heldByAction.removeValue(forKey: action)
     }
 
     public func dispatch(_ trigger: ActionTrigger) {
@@ -70,6 +142,13 @@ public final class ActionDispatcher: ActionDispatching {
                 return
             }
 
+            // Releasing something we already sent needs no authorisation: the decision was made when
+            // the key went down, and refusing the release here is exactly how a key gets stuck.
+            if phase == .up, heldRawStrokes.contains(stroke) {
+                emitRaw(stroke, phase: .up, frontmostBundleID: frontmostBundleID)
+                return
+            }
+
             let recipe = OutputRecipe(
                 steps: [.keyPress(stroke)],
                 risk: .sensitive,
@@ -88,8 +167,31 @@ public final class ActionDispatcher: ActionDispatching {
 
         guard let action = trigger.action else { return }
 
+        // Cross-app focus is a system effect, not a keystroke, so it takes this branch before any
+        // adapter or guard runs. It is deliberately **global** (any frontmost app, any profile):
+        // its motivating use case is being in a browser and wanting the agent back, which is exactly
+        // when no allowlisted app is in front and every tool chord is — correctly — blocked. It also
+        // cannot misfire into the wrong app: the activator only ever raises one of the two agents
+        // the config names, and it sends them no input.
+        if action.recipeEffect == .activateAgentApp {
+            performFocus(action, frontmostBundleID: frontmostBundleID, config: config)
+            return
+        }
+
         let adapter = AdapterCatalog.adapter(for: profile, overrides: config.overrides)
         let support = adapter.support(for: action)
+
+        // A release never re-decides. If this action has a key outstanding, send exactly the stroke
+        // that went down — even when the profile changed, the config was reloaded, or the frontmost
+        // app left the allowlist in the meantime. Those are precisely the cases where re-resolving
+        // (or re-authorising) would strand a held key in the target application.
+        if case .up = trigger, let held = heldStroke(for: action) {
+            emitter.keyUp(held)
+            forget(action)
+            onEmitted?(action, held)
+            onDiagnostic?("SEND  up    \(action.rawValue) → \(held.description) → \(frontmostBundleID ?? "?")")
+            return
+        }
 
         guard let recipe = support.recipe else {
             let reason = support.note ?? "not supported by \(profile.rawValue)"
@@ -115,8 +217,12 @@ public final class ActionDispatcher: ActionDispatching {
 
         switch trigger {
         case .press: emitter.press(stroke)
-        case .down: emitter.keyDown(stroke)
-        case .up: emitter.keyUp(stroke)
+        case .down:
+            emitter.keyDown(stroke)
+            remember(stroke, for: action)
+        case .up:
+            emitter.keyUp(stroke)
+            forget(action)
         case .raw: break
         }
 

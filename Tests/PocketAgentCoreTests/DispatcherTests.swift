@@ -25,26 +25,49 @@ private final class StubFrontmost: FrontmostAppProviding {
     func frontmostBundleID() -> String? { bundleID }
 }
 
+/// Records what would have been focused, and lets a test force a failure.
+private final class SpyActivator: AppActivating {
+    private(set) var requested: [String] = []
+    var result: (String) -> AppActivationOutcome = { bundleID in
+        AppActivationOutcome(
+            succeeded: true,
+            bundleID: bundleID,
+            method: .appleScript,
+            elapsedMs: 42,
+            attempts: [AppActivationAttempt(method: .appleScript, succeeded: true, elapsedMs: 42)]
+        )
+    }
+
+    func activate(bundleID: String) -> AppActivationOutcome {
+        requested.append(bundleID)
+        return result(bundleID)
+    }
+}
+
 final class DispatcherTests: XCTestCase {
     private func makeDispatcher(
         profile: ToolProfile,
         frontmost: String? = "com.openai.codex",
         allowed: [String] = ["com.openai.codex"],
         overrides: [String: AppConfig.KeyBinding] = [:],
-        mode: ProfileMode = .manual
+        mode: ProfileMode = .manual,
+        pair: AppConfig.AgentPair = .default,
+        activator: AppActivating? = nil
     ) -> (ActionDispatcher, SpyEmitter, StubFrontmost) {
         var config = AppConfig()
         config.profileMode = mode
         config.activeProfile = profile
         config.allowedBundleIDs = allowed
         config.actionKeyOverrides = overrides
+        config.agentPair = pair
 
         let emitter = SpyEmitter()
         let frontmostProvider = StubFrontmost(frontmost)
         let dispatcher = ActionDispatcher(
             configProvider: { config },
             frontmost: frontmostProvider,
-            emitter: emitter
+            emitter: emitter,
+            activator: activator
         )
         return (dispatcher, emitter, frontmostProvider)
     }
@@ -178,5 +201,136 @@ final class DispatcherTests: XCTestCase {
             dispatcher.dispatch(.press(action))
         }
         XCTAssertEqual(emitter.events.count, bound.count)
+    }
+
+    // MARK: - Cross-app focus (hold B)
+
+    func testFocusOtherAgentRaisesTheOtherAppAndSendsNoKeystroke() {
+        let activator = SpyActivator()
+        let (dispatcher, emitter, _) = makeDispatcher(profile: .codex, activator: activator)
+
+        dispatcher.dispatch(.press(.focusOtherAgent))
+
+        XCTAssertEqual(activator.requested, ["com.anthropic.claudefordesktop"])
+        XCTAssertTrue(emitter.events.isEmpty, "focusing an app is not a keystroke")
+    }
+
+    func testFocusOtherAgentTogglesBothWays() {
+        let activator = SpyActivator()
+        let (dispatcher, _, frontmost) = makeDispatcher(profile: .codex, activator: activator)
+
+        dispatcher.dispatch(.press(.focusOtherAgent))
+        frontmost.bundleID = "com.anthropic.claudefordesktop"
+        dispatcher.dispatch(.press(.focusOtherAgent))
+
+        XCTAssertEqual(activator.requested, ["com.anthropic.claudefordesktop", "com.openai.codex"])
+    }
+
+    func testFocusOtherAgentWorksFromAnAppThatIsNotAllowlisted() {
+        // The whole point: the user is in a browser, no agent chord may fire there, and this one
+        // still must. It sends the app no input, so the allowlist has nothing to protect.
+        let activator = SpyActivator()
+        let (dispatcher, emitter, _) = makeDispatcher(
+            profile: .genericTerminal, frontmost: "com.apple.Safari", allowed: [], activator: activator)
+
+        dispatcher.dispatch(.press(.focusOtherAgent))
+
+        XCTAssertEqual(activator.requested, ["com.openai.codex"])
+        XCTAssertTrue(emitter.events.isEmpty)
+    }
+
+    func testFocusOtherAgentReportsFailureAndEmitsNothing() {
+        let activator = SpyActivator()
+        activator.result = { bundleID in
+            AppActivationOutcome(
+                succeeded: false,
+                bundleID: bundleID,
+                elapsedMs: 900,
+                attempts: [AppActivationAttempt(method: .appleScript, succeeded: false, elapsedMs: 900, reason: "app is not running")],
+                reason: "app is not running"
+            )
+        }
+        let (dispatcher, emitter, _) = makeDispatcher(profile: .codex, activator: activator)
+        var activations: [(AgentAction, AppActivationOutcome)] = []
+        dispatcher.onActivation = { activations.append(($0, $1)) }
+
+        dispatcher.dispatch(.press(.focusOtherAgent))
+
+        XCTAssertTrue(emitter.events.isEmpty)
+        XCTAssertEqual(activations.count, 1)
+        XCTAssertFalse(activations[0].1.succeeded)
+        XCTAssertTrue(AppActivationReport.describe(activations[0].1).contains("not running"))
+    }
+
+    func testFocusOtherAgentWithASingleAgentPairResolvesToThatAgent() {
+        // A blank side — as opposed to a *missing* one, which falls back to its default — is how a
+        // one-agent pair is written. It always resolves to that agent instead of inventing a second
+        // target, and never reports "nothing to do".
+        let activator = SpyActivator()
+        let (dispatcher, emitter, _) = makeDispatcher(
+            profile: .codex,
+            pair: AppConfig.AgentPair(leftBundleID: "com.openai.codex", rightBundleID: ""),
+            activator: activator
+        )
+        var diagnostics: [String] = []
+        dispatcher.onDiagnostic = { diagnostics.append($0) }
+
+        dispatcher.dispatch(.press(.focusOtherAgent))
+
+        XCTAssertEqual(activator.requested, ["com.openai.codex"])
+        XCTAssertTrue(emitter.events.isEmpty)
+        XCTAssertTrue(diagnostics.isEmpty)
+    }
+
+    // MARK: - Releases must not be re-decided
+
+    func testReleaseSurvivesTheFrontmostAppLeavingTheAllowlist() {
+        // Found by review (2026-09-16). `keyUp` used to go through the same guard as `keyDown`, so
+        // moving focus off the allowlist while an arrow was held denied the release — a key stuck
+        // down in whatever app you switched to. Releases are not a new decision.
+        let (dispatcher, emitter, frontmost) = makeDispatcher(
+            profile: .codex, frontmost: "com.openai.codex", allowed: ["com.openai.codex"], mode: .manual)
+
+        dispatcher.dispatch(.down(.navigateUp))
+        frontmost.bundleID = "com.apple.Safari"   // focus leaves the allowlist mid-hold
+        dispatcher.dispatch(.up(.navigateUp))
+
+        XCTAssertEqual(emitter.events, [.down(.key(.upArrow)), .up(.key(.upArrow))])
+    }
+
+    func testReleaseSurvivesTheActionBecomingUnsupported() {
+        // Same class of bug through the other door: the profile changed (or a config reload dropped
+        // the override), so the adapter no longer resolves the action at all. The outstanding key
+        // still has to come up.
+        let emitter = SpyEmitter()
+        let frontmost = StubFrontmost("com.openai.codex")
+        var config = AppConfig(activeProfile: .codex, profileMode: .manual)
+        let dispatcher = ActionDispatcher(
+            configProvider: { config }, frontmost: frontmost, emitter: emitter)
+
+        dispatcher.dispatch(.down(.navigateUp))
+        config.activeProfile = .claudeCode        // Claude cannot navigate with this action
+        dispatcher.dispatch(.up(.navigateUp))
+
+        XCTAssertEqual(emitter.events, [.down(.key(.upArrow)), .up(.key(.upArrow))])
+    }
+
+    func testHeldGestureOverrideIsReleasedWithTheStrokeThatWentDown() {
+        // The voice-input case: a held modifier-only override is sent down, then the override table
+        // loses B+A (profile switch / config reload / frontmost app change). Nothing may re-resolve
+        // the *identity* of the key that is physically still down.
+        let emitter = SpyEmitter()
+        let frontmost = StubFrontmost("com.apple.Safari")
+        var config = AppConfig(activeProfile: .codex, profileMode: .auto)
+        config.gestureKeyOverrides = ["b.a": AppConfig.KeyBinding(modifiers: [.rightOption], hold: true)]
+        let dispatcher = ActionDispatcher(
+            configProvider: { config }, frontmost: frontmost, emitter: emitter)
+
+        let option = KeyStroke(modifiers: [.rightOption])
+        dispatcher.dispatch(.raw(option, .down))
+        config.gestureKeyOverrides = [:]          // the table changes mid-gesture
+        dispatcher.dispatch(.raw(option, .up))
+
+        XCTAssertEqual(emitter.events, [.down(option), .up(option)])
     }
 }

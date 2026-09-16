@@ -82,6 +82,11 @@ func previewStroke(for action: AgentAction) -> KeyStroke? {
         // Deliberately unbound in the default map: fast mode and the permission menu need a
         // one-time user key binding, and the rest would need gestures we do not have.
         return nil
+
+    case .focusOtherAgent:
+        // Not a keystroke at all — it raises the other agent's window. Shown as nil here because
+        // this tool only previews keys.
+        return nil
     }
 }
 
@@ -95,6 +100,9 @@ final class SmokeDispatcher: ActionDispatching {
     init(emitter: InputEmitting?) {
         self.emitter = emitter
     }
+
+    /// Log-only tool: it holds no key state of its own, so there is nothing to forget.
+    func releaseHeldStrokes() {}
 
     func dispatch(_ trigger: ActionTrigger) {
         let phase: String

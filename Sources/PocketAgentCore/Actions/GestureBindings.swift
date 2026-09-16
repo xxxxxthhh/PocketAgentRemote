@@ -6,10 +6,22 @@ public struct GestureBindings: Equatable, Sendable {
     public var base: [PhysicalButton: AgentAction]
     /// B layer: the key that, pressed while B is held, produces this action.
     public var bLayer: [PhysicalButton: AgentAction]
+    /// What releasing B *after the hold threshold* means.
+    ///
+    /// B has always produced two different gestures from one button — `b.tap` and `b.hold` — but
+    /// both used to resolve through `base[.b]`. This field splits them, so a long press can mean
+    /// something other than a tap without the recognizer changing at all. It is nil-safe: leaving
+    /// it unset falls back to `base[.b]`, which is the previous behaviour.
+    public var bHold: AgentAction?
 
-    public init(base: [PhysicalButton: AgentAction], bLayer: [PhysicalButton: AgentAction]) {
+    public init(
+        base: [PhysicalButton: AgentAction],
+        bLayer: [PhysicalButton: AgentAction],
+        bHold: AgentAction? = nil
+    ) {
         self.base = base
         self.bLayer = bLayer
+        self.bHold = bHold
     }
 
     /// Default map. Base layer is universal navigation; the B layer mixes two things the user asked
@@ -17,6 +29,12 @@ public struct GestureBindings: Equatable, Sendable {
     ///
     /// History: an all-chat-jump B layer (six slots) was tried first and rejected as too many
     /// (2026-09-16) — two recent chats turned out to be the useful number.
+    ///
+    /// `b.hold` became "focus the other agent" on 2026-09-16 at the user's request: the goal is to
+    /// drive both apps without ever reaching for the keyboard, and with twelve gestures already
+    /// spoken for, holding B was the only slot that cost no other function. It changes the approval
+    /// flow — a long press of B used to mean "decline", and is now a cross-app jump, so declining
+    /// is a tap. That trade was made deliberately, not by omission.
     public static let `default` = GestureBindings(
         base: [
             .up: .navigateUp,
@@ -32,7 +50,8 @@ public struct GestureBindings: Equatable, Sendable {
             .left: .newChat,                   // ⌘N  — start a new agent task
             .right: .nextChatNeedingAttention, // ⌥⌘A — whichever agent wants you
             .a: .inspectChanges,               // ⌥⌘B — review the diff
-        ]
+        ],
+        bHold: .focusOtherAgent
     )
 }
 
@@ -108,7 +127,8 @@ public enum GestureID {
         }
     }
 
-    /// Every identifier the config may use — exactly the 11 gestures the hardware can produce.
+    /// Every identifier the config may use — exactly the 12 gestures the hardware can produce:
+    /// `up`/`down`/`left`/`right`/`a`, then `b.tap`, `b.hold`, and the four B chords.
     /// Handy for validation and for documenting the config surface.
     public static let all: [String] = {
         var ids = PhysicalButton.allCases
@@ -143,19 +163,39 @@ public struct GestureOverride: Equatable, Sendable {
     public var holdsModifiersOnly: Bool { isHeld && stroke.isModifiersOnly }
 }
 
+/// Resolves recognizer events into triggers.
+///
+/// This is a **value type with no history on purpose**: the same resolver can be handed a different
+/// override table between a press and its release (that is exactly what happens when the frontmost
+/// app changes, the profile switches, or the config is reloaded). Deciding what a *start* event
+/// means and what its *end* means are therefore two separate calls — `pressTriggers` and
+/// `releaseTriggers` — so the caller can hold the table from the start across to the end. A single
+/// entry point that resolved both from "the current table" is what used to lose the release.
 public struct EventResolver: Sendable {
     public let bindings: GestureBindings
     /// Gesture identifier → keystroke. Takes precedence over the semantic binding for that gesture,
     /// which is how a user can point any gesture at any command without touching code.
     public let gestureOverrides: [String: GestureOverride]
 
-    public init(bindings: GestureBindings = .default, gestureOverrides: [String: GestureOverride] = [:]) {
+    public init(
+        bindings: GestureBindings = .default,
+        gestureOverrides: [String: GestureOverride] = [:]
+    ) {
         self.bindings = bindings
         self.gestureOverrides = gestureOverrides
     }
 
-    public func triggers(for event: ResolvedEvent) -> [ActionTrigger] {
-        if let override = gestureOverrides[GestureID.of(event)] {
+    /// Triggers for anything that is not the end of a gesture.
+    ///
+    /// `overrides` is consulted instead of `gestureOverrides` so the caller can pass the table it
+    /// froze when the gesture started.
+    public func pressTriggers(
+        for event: ResolvedEvent,
+        overrides: [String: GestureOverride]? = nil
+    ) -> [ActionTrigger] {
+        let table = overrides ?? gestureOverrides
+
+        if let override = table[GestureID.of(event)] {
             let stroke = override.stroke
             if override.holdsModifiersOnly {
                 // Held modifier-only binding: press on chord start, release when the chord ends.
@@ -180,6 +220,12 @@ public struct EventResolver: Sendable {
             return [.up(action)]
 
         case .gesture(.tap(let button)), .gesture(.hold(let button)):
+            // B is the only button with two gestures on one press, and they may mean different
+            // things: `bHold` overrides the base binding for the hold gesture only. A tap is
+            // unaffected, which is what keeps "tap B = Escape" intact.
+            if button == .b, case .gesture(.hold(.b)) = event, let holdAction = bindings.bHold {
+                return [.press(holdAction)]
+            }
             guard let action = bindings.base[button] else { return [] }
             return [.press(action)]
 
@@ -191,6 +237,33 @@ public struct EventResolver: Sendable {
             // Semantic actions are one-shot; only held bindings care about the release.
             return []
         }
+    }
+
+    /// Triggers for the end of a gesture — currently only `chordReleased`, which exists to finish a
+    /// held binding.
+    ///
+    /// Deliberately *not* routed through the semantic path: a chord that ended must be released with
+    /// the binding that started it, never with a fresh lookup. This is where a profile switch during
+    /// push-to-talk used to strand the modifier key down.
+    public func releaseTriggers(
+        for event: ResolvedEvent,
+        overrides: [String: GestureOverride]? = nil
+    ) -> [ActionTrigger] {
+        guard case .gesture(.chordReleased) = event else {
+            return pressTriggers(for: event, overrides: overrides)
+        }
+
+        let table = overrides ?? gestureOverrides
+        guard let override = table[GestureID.of(event)], override.holdsModifiersOnly else {
+            // Either the gesture was never a held override, or it started before this table existed;
+            // there is nothing held to release.
+            return []
+        }
+        return [.raw(override.stroke, .up)]
+    }
+
+    public func triggers(for event: ResolvedEvent) -> [ActionTrigger] {
+        pressTriggers(for: event)
     }
 
     public func triggers(for events: [ResolvedEvent]) -> [ActionTrigger] {

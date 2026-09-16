@@ -4,9 +4,25 @@ import XCTest
 final class EventResolverTests: XCTestCase {
     private let resolver = EventResolver()
 
-    func testTapAndHoldBothCancel() {
+    func testBHasTwoGesturesWithDifferentMeanings() {
+        // Changed on 2026-09-16: a tap of B is still Escape/decline, but a *hold* is now the
+        // cross-app switch. Both gestures come from the same button, so this is the test that
+        // pins down which one does what.
         XCTAssertEqual(resolver.triggers(for: .gesture(.tap(.b))), [.press(.cancelOrInterrupt)])
+        XCTAssertEqual(resolver.triggers(for: .gesture(.hold(.b))), [.press(.focusOtherAgent)])
+    }
+
+    func testBHoldFallsBackToTheBaseBindingWhenUnset() {
+        // `bHold` is optional so a caller that builds bindings by hand keeps the old behaviour
+        // instead of silently losing the hold gesture.
+        let bindings = GestureBindings(
+            base: [.b: .cancelOrInterrupt],
+            bLayer: [.up: .goToRecentChat1],
+            bHold: nil
+        )
+        let resolver = EventResolver(bindings: bindings)
         XCTAssertEqual(resolver.triggers(for: .gesture(.hold(.b))), [.press(.cancelOrInterrupt)])
+        XCTAssertEqual(resolver.triggers(for: .gesture(.tap(.b))), [.press(.cancelOrInterrupt)])
     }
 
     func testChordMappingTable() {

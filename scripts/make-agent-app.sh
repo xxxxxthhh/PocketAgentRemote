@@ -19,8 +19,11 @@ APP="$ROOT/build/PocketAgentRemote.app"
 BUNDLE_ID="com.pocketagentremote.app"
 
 echo "building pocketagent ($CONFIG) …"
-swift build -c "$CONFIG" --product pocketagent
-BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
+# SwiftPM nests its own sandbox, which some environments (and this project's own sandboxed
+# sessions) refuse. POCKETAGENT_SWIFTPM_FLAGS lets a caller pass e.g. --disable-sandbox without
+# changing the default behaviour for everyone else.
+swift build -c "$CONFIG" --product pocketagent ${POCKETAGENT_SWIFTPM_FLAGS:-}
+BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path ${POCKETAGENT_SWIFTPM_FLAGS:-})"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -57,6 +60,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 	<string>PocketAgentRemote — IINE L1162 remote for Codex / Claude desktop apps</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>PocketAgentRemote reads input from a paired Bluetooth controller so it can drive Codex or Claude.</string>
+	<!-- Required for "focus the other agent" (holding B): switching the frontmost application is a
+	     system effect, and on macOS 14+ the only mechanism that actually works is an AppleScript
+	     `activate`. Without this key the Apple Events request is refused outright instead of
+	     prompting, and the feature silently does nothing. -->
+	<key>NSAppleEventsUsageDescription</key>
+	<string>PocketAgentRemote brings the Codex or Claude window to the front when you press the switch-agent button on the controller.</string>
 </dict>
 </plist>
 PLIST

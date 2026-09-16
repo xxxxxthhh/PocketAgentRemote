@@ -19,20 +19,37 @@ public final class ControllerInputCoordinator {
 
     private let sources: [ControllerInputSource]
 
+    /// True while a source is reporting a detach.
+    ///
+    /// An input event arriving in that window is cleanup from a device that is already gone, not
+    /// something the user did, so it is dropped instead of becoming a gesture. The HID source no
+    /// longer synthesises releases on detach, but this keeps the rule true for any source that does
+    /// — the failure it prevents is a controller vanishing and switching applications by itself.
+    private var isDetaching = false
+
     public init(
         gameController: ControllerInputSource = GameControllerInputSource(),
         hid: ControllerInputSource = HIDInputSource()
     ) {
         sources = [gameController, hid]
         for source in sources {
-            source.onEvent = { [weak self] event in self?.onEvent?(event) }
+            source.onEvent = { [weak self] event in
+                guard let self, !self.isDetaching else { return }
+                self.onEvent?(event)
+            }
+            source.onWillDetach = { [weak self] in
+                self?.isDetaching = true
+            }
             source.onAttach = { [weak self] name in
                 self?.onDiagnostic?("connected via \(source.transport.rawValue): \(name)")
                 self?.onAttach?(name)
             }
             source.onDetach = { [weak self] name in
-                self?.onDiagnostic?("disconnected (\(source.transport.rawValue)): \(name)")
-                self?.onDetach?(name)
+                guard let self else { return }
+                self.isDetaching = true
+                defer { self.isDetaching = false }
+                self.onDiagnostic?("disconnected (\(source.transport.rawValue)): \(name)")
+                self.onDetach?(name)
             }
             (source as? GameControllerInputSource)?.onDiagnostic = { [weak self] message in
                 self?.onDiagnostic?(message)

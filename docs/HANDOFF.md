@@ -1,6 +1,7 @@
 # 交接文档：当前完整状态
 
 > 生成于 2026-09-16 · 27 个 commit · 5413 行 Swift · 111 个单测全绿
+> **2026-09-16 更新**：新增「切到另一个 agent」（`B 长按`）· 审查后修复 6 项 · 146 个单测全绿
 > **给新会话读的第一份文档。** 它记录的是「现在真实是什么状态」，
 > 而 `docs/spec-v0.3.md` 记录的是「设计意图」—— 两者已经有偏离，差异在 §6 列明。
 
@@ -66,7 +67,8 @@ swift test                              # 111 个测试
 |---|---|---|---|
 | ↑ ↓ ← → | 方向键 | 方向键 | 方向键 |
 | **A** | `Enter`（提交 / **批准**） | 同左 | 同左 |
-| **B 轻按 / 长按** | `Escape`（取消 / **拒绝**） | 同左 | 同左 |
+| **B 轻按** | `Escape`（取消 / **拒绝**） | 同左 | 同左 |
+| **B 长按** | **切到另一个 agent**（全局，不受 profile/白名单影响） | 同左 | 同左 |
 | **B + ↑** | `⌥⌘1` 跳到最近会话 1 | `⌘⇧]` 下一个会话 | **不发** |
 | **B + ↓** | `⌥⌘2` 跳到最近会话 2 | `⌘⇧[` 上一个会话 | **不发** |
 | **B + ←** | `⌘N` 新建会话 | `⌘N` 新建对话 | **不发** |
@@ -75,8 +77,32 @@ swift test                              # 111 个测试
 
 > `A` / `B` 兼作批准 / 拒绝，因为 Codex 与 Claude 的审批弹层就是 `Enter` / `Escape` ——
 > 最终确认权留在 agent 自己的 UI 里。**没有**独立的 approve/reject 动作，是刻意的（见 §6）。
+> **注意**：`B 长按` 已改作切 App，审批时拒绝必须用 B **轻按**。
 
-### 3.3 语音输入的正确用法（踩了很久）
+### 3.3 切到另一个 agent（`B 长按`，2026-09-16 新增）
+
+一条手势在两个 agent 之间来回切，目标是「把手从键盘上解放出来」：在浏览器里也能一键回到
+Codex / Claude。
+
+- **不经过 adapter，也不受白名单限制** —— 切前台 App 是系统效果，不是发给某个 App 的按键。
+  它只会在配置指定的两个 App 之间切，且不给它们任何输入，所以没有误发的可能。
+- **门槛是 `holdMs`（450 ms），不是 `tapMaxMs`（220 ms）。** 识别器原先在 220 ms 就无条件把 B 判为
+  「长按」，于是 300 ms 的按压会切窗口 —— 这比文档承诺的更激进，且是破坏性动作。现在只有
+  `holdMs` 计时器真的触发才算长按，更短的按压一律算轻按（取消）。见 §7 第 15 条。
+- **实测结论（macOS 27，本机）**：`NSRunningApplication.activate(options:)`（含
+  `.activateIgnoringOtherApps` / `.activateAllWindows`）、AX `kAXFrontmost`（返回 `.success`
+  但无效）、AX raise main window、合成 `⌘⇥`、`NSWorkspace.openApplication(.activates)`
+  **全部无效**；**只有 AppleScript `tell application "X" to activate` 稳定生效**（两个方向、
+  反复通过，CLI 进程与签名 App bundle 两种宿主都验证过，且没有弹 TCC 授权框）。
+  `AppActivator` 因此把 AppleScript 排在 `methodOrder` 第一位，并把「谁生效了」写进日志。
+- **`Info.plist` 必须有 `NSAppleEventsUsageDescription`**（`scripts/make-agent-app.sh` 已加），
+  否则 Apple Events 请求会被直接拒绝而不是弹框。
+- 目标由配置 `agentPair` 决定：在两方之一按下就切另一方，从别的 App 按则切到 `left`；
+  `left/right` 是**槽位**不是左右手方向，为后续「左=Codex / 右=Claude」留了口子。
+- 菜单里加了 `Focus Other Agent Now`（等价入口）和 `Last switch:` 结果行；
+  日志标签是 `FOCUS`。
+
+### 3.4 语音输入的正确用法（踩了很久）
 
 **按住 B → 按住 A → 可以松开 B → 一直按住 A 说话 → 松开 A 结束。**
 
@@ -97,6 +123,12 @@ swift test                              # 111 个测试
     "com.anthropic.claudefordesktop": "claudeCode"
   },
   "fallbackProfile": "genericTerminal",
+  "agentPair": {
+    "leftBundleID": "com.openai.codex",
+    "rightBundleID": "com.anthropic.claudefordesktop",
+    "leftName": "Codex",
+    "rightName": "Claude"
+  },
 
   "gestureKeyOverrides": {
     "b.a": { "modifiers": ["rightOption"], "hold": true }
@@ -119,8 +151,13 @@ swift test                              # 111 个测试
 
 **三层覆盖，后者优先**：内置语义动作 → `gestureKeyOverrides`（全局）→ `profileGestureKeyOverrides`（按 profile）。
 
+**`agentPair` 的语义**：`left`/`right` 是两个**槽位**（不是左右手方向）。从任一方按下 → 切另一方；
+从其他 App 按下 → 切 `left`。某侧写 `""` = 单 agent 模式（永远切到剩下那个）；
+写 `null` 或不写 = 回落到内置默认值。**注意 `""` 与 `null` 不是一回事**，前者是「没有第二个」。`
+
 - **12 个手势标识符**（硬件能产生的全部）：
   `up` `down` `left` `right` `a` · `b.tap` `b.hold` · `b.up` `b.down` `b.left` `b.right` `b.a`
+  （`b.tap` = 取消；`b.hold` = 切到另一个 agent）
 - **`key` 可省略** → 只按修饰键。默认单击，`"hold": true` 改按住式。
 - **修饰键分左右**：`option`=左(58) / `rightOption`=右(61)。**选错不报错，只是没反应。**
 - **`key` 支持自然写法**：`"1"` `"]"` `"up"` `"esc"` 等（也接受 `digit1`/`rightBracket`/`upArrow`）。
@@ -133,13 +170,14 @@ swift test                              # 111 个测试
 ```text
 Sources/PocketAgentCore/          全部逻辑，无 UI 依赖，可单测
 ├── Domain/                       PhysicalButton · InputEvent · ControllerGesture(含 chordReleased)
-│                                 AgentAction(24 个) · ActionRisk · OutputRecipe
+│                                 AgentAction(25 个) · ActionRisk · OutputRecipe · RecipeEffect
 ├── Gesture/                      GestureRecognizer（纯状态机 + 可注入时钟）
-├── Actions/                      GestureBindings / GestureID / GestureOverride / EventResolver
+├── Actions/                      GestureBindings(含 bHold) / GestureID / GestureOverride / EventResolver
 ├── Adapters/                     ToolAdapter 协议 + Codex / Claude / Generic 三套
 ├── Guard/                        ActionGuard（显式 profile / macro / 白名单）
-├── Config/                       AppConfig（容错解码）+ ConfigStore
-├── Dispatch/                     ActionDispatcher（trigger → adapter → guard → emitter）
+├── Focus/                        AppActivator（切前台 App）+ AgentPairResolver（切哪个）
+├── Config/                       AppConfig（容错解码，含 agentPair）+ ConfigStore
+├── Dispatch/                     ActionDispatcher（trigger → adapter/系统效果 → guard → emitter）
 ├── Output/                       KeyStroke · CGEventEmitter（串行队列 + 真修饰键事件）
 ├── Input/                        HIDMapping · GameControllerInputSource · HIDInputSource · Coordinator
 └── Engine/                       ControllerEngine（把上面串起来）
@@ -149,6 +187,10 @@ Sources/AgentProbe/               Phase 0 探针
 Sources/AgentCoreSmoke/           Phase 1 真机验证工具（log-only）
 Tools/dump-menu-accelerators.swift 用 AX API 导出运行中 App 的真实菜单快捷键
 ```
+
+`focusOtherAgent` 是唯一**不走 adapter、不走白名单**的动作：`ActionDispatcher` 在 keystroke 路径
+之前按 `RecipeEffect.activateAgentApp` 分流，交给 `AppActivator`。理由写在代码注释里，
+测试在 `DispatcherTests.testFocusOtherAgent*` 与 `AgentPairTests`。
 
 日志：`~/Library/Application Support/PocketAgentRemote/debug.log`
 标签 `RAW` / `GESTURE` / `OUTPUT`(`SEND`|`SKIP`|`DENY`) / `DEVICE` / `APP` 足以定位问题在哪一层。
@@ -168,6 +210,10 @@ Tools/dump-menu-accelerators.swift 用 AX API 导出运行中 App 的真实菜�
 | 5 | 修饰键不分左右 | 分左右（keyCode 56/60、58/61…） | 豆包要的是**右** option |
 | 6 | 手势绑定全局 | 支持按 profile 区分 | 两个 App 的快捷键几乎零重叠 |
 | 7 | — | `chordReleased` 事件 | 按住式修饰键绑定需要知道何时结束 |
+| 8 | — | **`b.hold` 从「拒绝」改为「切到另一个 agent」** | 用户要求「把手从键盘上释放出来」；12 个手势已用满，只有 B 的长按不占用其他功能（代价：审批拒绝改用轻按） |
+| 9 | 输出只有按键 + 修饰键 | **增加系统效果 `RecipeEffect.activateAgentApp`** | 切前台 App 不是按键，adapter 表达不了；且它必须在任何前台 App 下都能用，所以也绕开白名单 |
+| 10 | §18「B 超过 tapMaxMs 即 hold」 | **改为以 `holdMs` 判定，且 chord 优先** | 一次代码审查发现 300 ms 就会切窗口；破坏性动作不能用「比文档更激进」的门槛 |
+| 11 | 释放复用同一条 dispatch 路径 | **释放按「实际发出的按键」处理，不再鉴权/重解析** | 否则中途换前台/换 profile 会让按键卡住（实测复现） |
 
 ---
 
@@ -193,6 +239,33 @@ Tools/dump-menu-accelerators.swift 用 AX API 导出运行中 App 的真实菜�
    否则新增一个字段就会让旧配置解析失败、静默重置用户设置。
 10. **`bConsumedByChord` 标志**阻止「chord 结束后松开 B 补发 Escape」—— 单测抓到的真实缺陷。
 11. **App 必须签名稳定**，否则每次重建丢 Accessibility 授权（实测三次重建三次重授权）。
+12. **切前台 App 只有 AppleScript 一条路（macOS 14+/27 实测）。** `NSRunningApplication.activate`
+    的各种 options、AX `kAXFrontmost`（**返回 `.success` 却毫无效果**）、AX raise window、
+    合成 `⌘⇥`、`NSWorkspace.openApplication(.activates)` 全部无效。别因为「看起来更正统」就把
+    AppleScript 换掉 —— 换掉就是功能直接失效。同时 `Info.plist` 必须有
+    `NSAppleEventsUsageDescription`，否则请求被拒且不弹框。
+13. **`""` 与 `nil` 在 `agentPair` 里含义不同。** `nil`/缺省 = 用内置默认值（回落到另一个 agent）；
+    `""` = 这一侧没有 agent。两者都走容错解码，所以写错不会报错 —— 只会静默用默认值。
+    解析时一律用过滤后的 `bundleIDs`，别用原始字段（曾因此返回空 bundle ID）。
+14. **释放不能被重新决策。** `keyUp` 曾和 `keyDown` 走同一条 guard/adapter 路径，于是
+    「按住方向键 → 前台切到白名单外 → 松开」会**丢掉释放**（键卡在目标 App 里）；
+    「按住 B+A 语音 → 中途换 profile/改配置，覆盖表变了」则连触发都没有，`rightOption` 一直按着。
+    现在 dispatcher 记录**每个按下动作实际发出的按键**，释放时按记录发，不再重新解析或鉴权
+    （`releaseHeldStrokes()` 在断连时清账）；手势层面则在下 chord 时**冻结覆盖表**，直到该 chord 释放。
+15. **`tapMaxMs` 不是长按门槛。** 识别器过去在 `tapMaxMs` 就到 `.ready`，长按动作在释放时无条件发射，
+    等价于「220 ms 即长按」。`holdMs` 形同虚设。现在 `.ready` 带 `holdFired` / `occupiedByChord`
+    两个标志：只有计时器真的触发才算长按；chord 一旦接手，这次 B 按下就**不再产生任何 B 手势**
+    （否则语音输入结束会多补一次 `Escape`）。**A 已按住时按 B 一律忽略** —— 否则松开 A 之后那一下
+    B 会被当成新的按下，长按后变成切窗口。
+16. **断连清理不是用户输入。** HID 源原先在 `deviceRemoved` 里先合成「全部松开」再报 detach，
+    识别器把按着的 B 当成真实手势 —— 于是**手柄断连/走远会自己切窗口**。现在源在清理前发
+    `onWillDetach`，协调器据此整段屏蔽事件；引擎另有一道兜底：**没有按下在飞行的释放一律丢弃**。
+17. **配置解析失败后不能写盘。** `load()` 只回退默认值不写文件，但此后任何一个菜单开关都会
+    `update()` → 把默认值覆盖上去，一个拼写错误就抹掉用户全部设置。现在 `didFailToLoad` 会让
+    `update()` 返回 `.refusedUnreadableConfig` 并保留原文件。
+18. **两个 Swift 可选链陷阱，都栽过**：`flatMap` 的闭包返回 `nil` 会得到 `.some(nil)`，
+    `??` 不会回落；`Optional.filter` 在一元上下文里可能被解析成 `String.filter`。两者都静默走偏。
+    宁可写显式 `if let`。
 
 ---
 
@@ -206,10 +279,20 @@ Tools/dump-menu-accelerators.swift 用 AX API 导出运行中 App 的真实菜�
 - 语音输入（按住 B+A → 右 ⌥ → 豆包）
 - 自动切换 profile（切 App 换键位）
 - 在非白名单 App（浏览器）里按 A 发送回车
+- `AppActivator` 切换前台 App（用仓库内真实代码跑集成：浏览器 → Codex → Claude → Codex → Claude，
+  四次全 PASS，`via appleScript`，30–184 ms）
 - 断连/重连清理状态、不卡键
 - 重建后 Accessibility 授权保持
 
+### 2026-09-16 代码审查后的修复 ✅（146 个单测）
+- 6 条外部审查意见全部独立复核成立，逐条修复并加回归测试（`EngineTests` / `DispatcherTests` /
+  `CGEventEmitterTests` / `GuardAndConfigTests` / `GestureRecognizerTests`）。
+- 修复过程中自己引入并当场发现 2 处回归：`performKeyDown` 误弹修饰键（`[58,124,58,124]` 顺序错了）、
+  `releaseAll` 因此少释放一个修饰键 —— 两条既有测试立刻抓到，已按原语义重做。
+
 ### 未验证 ⚠️
+- **`B 长按` 的手柄真机验收** —— 代码路径、单元测试、打包、真实切换都验过了，
+  但「手柄上按住 B」这一下需要人来按。
 - **T / H 模式实拨验证** —— 代码层面确认不匹配键盘/鼠标设备，但没实际拨过开关
 - **Claude 的 Code 面板命令**（`⌘J` 终端 / `⌘⇧D` 变更 / `⌘⇧F` 文件 / `⌘;` 侧边对话）
   —— 菜单里实测为 `[OFF]`，需要先开 Code 会话
@@ -238,7 +321,8 @@ Tools/dump-menu-accelerators.swift 用 AX API 导出运行中 App 的真实菜�
 ## 10. 常用命令
 
 ```bash
-swift build && swift test                       # 构建 + 111 个测试
+swift build && swift test                       # 构建 + 146 个测试
+# 若报 sandbox_apply: Operation not permitted，加 --disable-sandbox
 ./scripts/make-agent-app.sh release             # 打包菜单栏 App
 ./.build/debug/coresmoke --duration 60          # 真机看手势链路（只打日志，不注入按键）
 ./.build/debug/agentprobe watch                 # 看原始 HID 报告

@@ -22,6 +22,7 @@ public final class HIDInputSource: ControllerInputSource {
     public var onEvent: ((InputEvent) -> Void)?
     public var onAttach: ((String) -> Void)?
     public var onDetach: ((String) -> Void)?
+    public var onWillDetach: (() -> Void)?
     public var onDiagnostic: ((String) -> Void)?
 
     public struct Configuration: Sendable {
@@ -126,12 +127,18 @@ public final class HIDInputSource: ControllerInputSource {
         attachedProduct = nil
         // The device disappears without releasing whatever was held, so release it here or the
         // target app keeps the key down forever (Phase 0 §6.8, spec §17).
+        //
+        // These releases are announced as cleanup first: the engine treats a detach as "release
+        // everything and reset gesture state", but a B that was down must not be handed to the
+        // recognizer as user input on the way out — that is how a controller vanishing would switch
+        // applications by itself.
         releaseEverything()
         onDiagnostic?("detached \(product) (raw HID)")
         onDetach?(product)
     }
 
     private func releaseEverything() {
+        onWillDetach?()
         let timestamp = now
         for button in pressedButtons {
             onEvent?(.released(button, timestamp: timestamp))

@@ -24,6 +24,9 @@ public final class GameControllerInputSource: ControllerInputSource {
     public var onEvent: ((InputEvent) -> Void)?
     public var onAttach: ((String) -> Void)?
     public var onDetach: ((String) -> Void)?
+    /// Declared for the protocol; this source never synthesises releases, so it has nothing to
+    /// announce before a detach.
+    public var onWillDetach: (() -> Void)?
     /// Diagnostic sink; the menu bar's debug monitor is expected to surface these.
     public var onDiagnostic: ((String) -> Void)?
 

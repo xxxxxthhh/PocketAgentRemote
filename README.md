@@ -82,12 +82,23 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 |---|---|---|
 | ↑ ↓ ← → | 导航 | 方向键（可长按重复） |
 | **A** | 提交 / **批准** | `Enter` |
-| **B 轻按** / **B 长按** | 取消 / **拒绝** | `Escape` |
+| **B 轻按** | 取消 / **拒绝** | `Escape` |
+| **B 长按** | **切到另一个 agent**（Codex ⇄ Claude） | 不发按键，直接切换前台 App |
 | **B + ↑** | 跳到最近会话 1 | `⌥⌘1` |
 | **B + ↓** | 跳到最近会话 2 | `⌥⌘2` |
 | **B + ←** | 新建会话 | `⌘N` |
 | **B + →** | 跳到**需要我处理**的会话 | `⌥⌘A` |
 | **B + A** | **语音输入**（豆包输入法，长按说话） | 按住右 `⌥`（见下） |
+
+> **`B 长按` 不经过 adapter，也不受白名单限制。** 切换前台 App 不是「给某个 App 发按键」，
+> 而是系统效果，所以它**在任何前台 App 下都生效** —— 包括你在浏览器里的时候，这正是它最有用
+> 的场景。实测（macOS 27）在进程内能用的几种办法（`NSRunningApplication.activate`、AX
+> `kAXFrontmost`、合成 `⌘⇥`）**全部无效**，唯一稳定生效的是 AppleScript `activate`，
+> 因此 `Info.plist` 里必须有 `NSAppleEventsUsageDescription`（构建脚本已带上）。
+>
+> 两侧的 App 可以在配置里改：`"agentPair": { "leftBundleID": …, "rightBundleID": … }`。
+> 在任何一方按下就切到另一方；从别的 App 按则切到 `left`。
+> 菜单里的 `Focus Other Agent Now` 是不用手柄的等价入口，结果会显示在菜单和日志里。
 
 > **`B + A` 来自配置里的修饰键手势**，不是内置的语义动作。按住 B 再按 A 就开始语音输入，
 > **此时松开 B 也没关系** —— 只要一直按着 A 就持续输入，松开 A 结束。
@@ -96,7 +107,13 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 > 用的是豆包的「长按**右**option」形态，不是「单击左option+左shift」—— 后者实测在合成事件下**不生效**。
 
 > `A` / `B` 同时承担「批准 / 拒绝」，因为 Codex 和 Claude 的审批弹层用的就是 `Enter` / `Escape` ——
-> 最终的确认权始终留在 agent 自己的 UI 里。
+> 最终确认权始终留在 agent 自己的 UI 里。**注意：拒绝请用 B 轻按**；按住 B 超过
+> `holdMs`（默认 **450 ms**）才会被当作「切换 agent」。`tapMaxMs`（220 ms）**不再**决定
+> 轻按/长按之分：按住 300 ms 仍是「取消」，不会切窗口。
+>
+> 另外两条边界：**B 一旦与方向键/A 组成 chord，这次 B 的按下就完全归 chord 所有** ——
+> 松开 B 不会再补发 `Escape`（语音输入结束不会多取消一次）；**A 已按住时再按 B 会被忽略**
+> （A 不是层键，避免松开 A 之后那一下 B 变成切窗口）。
 
 按住 `B` 不放可以连续触发多个 chord（类似按住 Shift 连按不同字母）。
 
@@ -118,6 +135,10 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
   "activeProfile": "codex",
   "macrosEnabled": false,
   "requireAllowedFrontmostApp": true,
+  "agentPair": {
+    "leftBundleID": "com.openai.codex",
+    "rightBundleID": "com.anthropic.claudefordesktop"
+  },
   "allowedBundleIDs": ["com.openai.codex", "com.anthropic.claudefordesktop", "..."],
   "actionKeyOverrides": {
     "toggleFastMode": { "key": "f", "modifiers": ["control", "option"] }
@@ -133,6 +154,11 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
   }
 }
 ```
+
+**`agentPair` 决定 `B 长按` 在两个 App 之间怎么切**：`left`/`right` 不是左右手方向，
+而是「两个槽位」——从任一方按下都切到另一方，从别的 App 按下则切到 `left`。
+留空一侧（`""`）就是单 agent 模式；写 `null` 则回落到内置默认值。
+`leftName`/`rightName` 只是显示用的名字，可省略。
 
 三层覆盖，**后者优先**：内置语义绑定 → `gestureKeyOverrides`（全局）→ `profileGestureKeyOverrides`（按 profile）。
 
@@ -157,9 +183,12 @@ key 是语义动作名，value 是按键。用来补齐 Codex **没有默认键�
 
 ```text
 基础层      up · down · left · right · a
-B 手势      b.tap · b.hold
+B 手势      b.tap（取消）· b.hold（切到另一个 agent）
 chord       b.up · b.down · b.left · b.right · b.a
 ```
+
+> `b.tap` 与 `b.hold` 是两个独立的手势，可以分别指向不同东西 —— 现在默认就是分开的。
+> 把 `b.hold` 写进 `gestureKeyOverrides` 可以覆盖掉「切换 agent」，改回发某个按键。
 
 按键名：`a`-`z`、`0`-`9`、`upArrow`/`downArrow`/`leftArrow`/`rightArrow`、
 `enter`/`escape`/`tab`/`space`、`minus`/`equal`/`comma`/`period`/`slash`/`grave` 等；
@@ -206,11 +235,16 @@ chord       b.up · b.down · b.left · b.right · b.a
 | Phase 1 控制器核心 | ✅ 73 个单测 + 真机验证（两条输入路径均通过） |
 | Phase 2 菜单栏 App | ✅ 可用（见 `docs/pending-user-tests.md` 待你验收） |
 | Phase 3 适配层 | ✅ Codex / Claude / Generic 三套；Codex 侧 8/11 动作有默认键位 |
+| 跨 App 切换（`B 长按`） | ✅ 代码与打包验证通过；**手柄真机验收待你** |
 
 ### 已知限制
 
 - **Codex 没有权限模式循环动作**，`B+↑` 已改绑 `新建会话`。切权限模式请用 Codex 自己的 UI。
 - **Claude 侧的动作映射未做深度验证**（调研深度不及 Codex），`queueFollowUp` 在 Claude 上不可用。
+- **`B 长按` 现在是切 App，不再是「拒绝」**：审批时拒绝请用 B 轻按。这是刻意的取舍。
+- **跨 App 切换依赖 AppleScript**：进程内的 `activate()` / AX / 合成 `⌘⇥` 在本机实测全部无效，
+  所以 `Info.plist` 里的 `NSAppleEventsUsageDescription` 是必需的。若将来系统改规则，
+  日志会打印实际生效的方法（`via appleScript`）以及全部失败原因。
 - **没有开机自启**（可选功能，未实现）。
 - 手柄的 **H 档（键盘模式）不消费输入** —— 只识别。C 档两个变体都完整支持。
 
@@ -230,6 +264,7 @@ docs/phase1-verification.md    Phase 1 真机验证记录
 docs/research-*.md             Codex / Claude / Codex Micro 调研
 
 Sources/PocketAgentCore/       全部逻辑（可单测，无 UI 依赖）
+Sources/PocketAgentCore/Focus/ 切前台 App（AppActivator + 两个 agent 的切换规则）
 Sources/PocketAgentApp/        菜单栏 App（薄壳）
 Sources/AgentProbe/            Phase 0 探针
 Sources/AgentCoreSmoke/        Phase 1 真机验证工具
@@ -243,11 +278,15 @@ scripts/make-app.sh            构建探针 App
 
 ```bash
 swift build
-swift test                                  # 82 个测试
+swift test                                  # 146 个测试
 ./.build/debug/coresmoke --duration 60      # 真机看手势链路（只打日志）
 ./.build/debug/agentprobe watch             # 看原始 HID 报告
 swift Tools/dump-menu-accelerators.swift ChatGPT   # 导出 Codex 的真实菜单快捷键
 ```
+
+> 如果 `swift build` 报 `sandbox_apply: Operation not permitted`（SwiftPM 的嵌套沙箱被外层沙箱拒绝），
+> 加 `--disable-sandbox` 即可；`scripts/make-agent-app.sh` 可用
+> `POCKETAGENT_SWIFTPM_FLAGS=--disable-sandbox` 透传。
 
 > **改键位前先跑最后那条命令。** Codex 的命令注册表里写的键位**不一定是运行时生效的** ——
 > `inspectChanges` 就因此错过一次：注册表的 `⌃⇧G` 毫无反应，菜单里实际绑的是 `⌥⌘B`。
