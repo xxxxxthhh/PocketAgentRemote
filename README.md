@@ -22,13 +22,39 @@ open build/PocketAgentRemote.app        # 启动（菜单栏出现手柄图标�
 2. **菜单 → `Input Monitoring`**：如果你的手柄是**泛用变体**（蓝牙里显示为 `Wireless Controller`），
    还需要授予 **Input Monitoring**。XInput 变体（`Xbox Wireless Controller`）不需要。
    菜单里会显示当前状态；`denied` 时点它跳到系统设置。
-3. **菜单里选 `Profile → Codex`**（或 Claude Code）。
-   *默认是 Generic Terminal，此时只有方向键／A／B 生效，B 层动作会被安全地跳过。*
-4. 手柄切到 **C 档**并连上，直接用。
+3. 手柄切到 **C 档**并连上，直接用 —— **profile 会自动跟着前台 App 走**，不用手动选。
 
-> ⚠️ **每次重新构建 App 后，两项授权都可能失效**（ad-hoc 签名变了），需要在系统设置里重新勾选。
+> 签名换成 Apple Development 证书后，**重新构建不再使授权失效**（早先 ad-hoc 签名每次重建都要重授权）。
 
 菜单栏图标：实心 = 手柄已连接。菜单里能实时看到当前 profile、前台 App、以及每类动作的结果。
+
+### 自动切换 profile
+
+```text
+前台是 ChatGPT(Codex)  → Codex 键位      （B+↑ = 跳到会话 1）
+前台是 Claude.app      → Claude 键位     （B+↑ = 下一个会话）
+前台是其他任何 App     → Generic         （只有方向键 / A=回车 / B=Esc）
+```
+
+配置里改：
+
+```json
+"profileMode": "auto",
+"autoProfileBundleIDs": {
+  "com.openai.codex": "codex",
+  "com.anthropic.claudefordesktop": "claudeCode"
+},
+"fallbackProfile": "genericTerminal"
+```
+
+**自动模式下不再检查前台 App 白名单** —— 因为 profile 本身就是从「前台 App」推出来的，
+未知 App 只能落到 Generic，工具专属动作不可能误发。白名单在手动模式下仍然生效。
+
+也可以切回 `"profileMode": "manual"`：那时在菜单里手动指定 profile，白名单负责拦住发错对象。
+
+> 这个设计**推翻了 spec v0.3 的 §6.4/§23.7**（「profile 必须显式选择、绝不推断」）。
+> 那条的理由是 v0.1 时代的「猜终端里跑的是哪个 agent」，在 macOS 上确实不可靠；
+> 而读前台 App 的 bundle ID 是精确的，守卫本来就在用同一个信号。前提变了，所以规则改了。
 
 ### 排查问题
 
