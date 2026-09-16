@@ -135,8 +135,8 @@ extension KeyStroke: CustomStringConvertible {
     public var description: String {
         let prefix = modifiers.map(\.rawValue).sorted().joined(separator: "+")
         guard let key else {
-            // Modifier-only strokes are held, so say so — otherwise a log line looks like a bug.
-            return prefix.isEmpty ? "<empty>" : prefix + " (held)"
+            // Modifier-only: nothing is typed, only the modifier keys move.
+            return prefix.isEmpty ? "<empty>" : prefix + " (modifiers only)"
         }
         return prefix.isEmpty ? key.rawValue : prefix + "+" + key.rawValue
     }

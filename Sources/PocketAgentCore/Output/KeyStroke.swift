@@ -2,11 +2,19 @@ import CoreGraphics
 import Foundation
 
 /// Modifier keys we may need to synthesise (spec §11.2).
+///
+/// Left and right are separate cases because some targets care: Doubao's voice input, for example,
+/// distinguishes 长按**右**option from its left-hand shortcuts. The two sides share an event flag
+/// but have different virtual key codes.
 public enum ModifierKey: String, Codable, CaseIterable, Sendable {
     case shift
     case control
     case option
     case command
+    case rightShift
+    case rightControl
+    case rightOption
+    case rightCommand
 
     public var keyCode: CGKeyCode {
         switch self {
@@ -14,16 +22,33 @@ public enum ModifierKey: String, Codable, CaseIterable, Sendable {
         case .control: return 59
         case .option: return 58
         case .command: return 55
+        case .rightShift: return 60
+        case .rightControl: return 62
+        case .rightOption: return 61
+        case .rightCommand: return 54
         }
     }
 
     public var eventFlag: CGEventFlags {
         switch self {
-        case .shift: return .maskShift
-        case .control: return .maskControl
-        case .option: return .maskAlternate
-        case .command: return .maskCommand
+        case .shift, .rightShift: return .maskShift
+        case .control, .rightControl: return .maskControl
+        case .option, .rightOption: return .maskAlternate
+        case .command, .rightCommand: return .maskCommand
         }
+    }
+
+    /// The flag-only view of this modifier, for the `event.flags` bitmask.
+    public var side: Side {
+        switch self {
+        case .shift, .control, .option, .command: return .left
+        case .rightShift, .rightControl, .rightOption, .rightCommand: return .right
+        }
+    }
+
+    public enum Side: String, Sendable {
+        case left
+        case right
     }
 }
 

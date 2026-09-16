@@ -50,6 +50,16 @@ public final class CGEventEmitter: InputEmitting {
     private var heldModifiers: Set<ModifierKey> = []
     private var heldKeys: Set<CGKeyCode> = []
 
+    /// Gap between the individual key events of a **modifier-only** tap.
+    ///
+    /// Measured 2026-09-16: pressing ⌥⇧ on a real keyboard starts Doubao's voice input, but our
+    /// zero-delay synthetic tap did not, even though the events reached the frontmost app. Input
+    /// methods sample modifier state over time rather than reading one event, so a physically
+    /// impossible 0 ms down/down/up/up sequence reads as noise and gets discarded.
+    ///
+    /// Costs ~120 ms per tap, which is imperceptible for a gesture that is itself a deliberate press.
+    public var modifierTapGap: TimeInterval = 0.04
+
     public convenience init(queue: DispatchQueue = DispatchQueue(label: "com.pocketagentremote.emitter")) {
         self.init(queue: queue, poster: QuartzKeyboardEventPoster())
     }
@@ -81,6 +91,22 @@ public final class CGEventEmitter: InputEmitting {
 
     func performPress(_ stroke: KeyStroke) {
         let modifiers = ordered(stroke.modifiers)
+
+        // Modifier-only taps are spread out in time; see `modifierTapGap`.
+        if stroke.isModifiersOnly {
+            for (index, modifier) in modifiers.enumerated() {
+                if index > 0 { Thread.sleep(forTimeInterval: modifierTapGap) }
+                pushModifier(modifier)
+            }
+            Thread.sleep(forTimeInterval: modifierTapGap)
+            for (index, modifier) in modifiers.reversed().enumerated() {
+                if index > 0 { Thread.sleep(forTimeInterval: modifierTapGap) }
+                popModifier(modifier)
+            }
+            cleanupIfIdle()
+            return
+        }
+
         for modifier in modifiers { pushModifier(modifier) }
         if let key = stroke.key {
             // The key event still carries the flags as well — some apps read one, some the other.

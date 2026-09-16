@@ -113,6 +113,30 @@ final class CGEventEmitterTests: XCTestCase {
         XCTAssertTrue(poster.events.isEmpty, "nothing was held, so nothing should be posted")
     }
 
+    func testRightSideModifiersUseTheirOwnKeyCodes() {
+        // Doubao distinguishes 长按右option from its left-hand shortcuts, so the two sides must not
+        // collapse into one key code.
+        XCTAssertEqual(ModifierKey.option.keyCode, 58)
+        XCTAssertEqual(ModifierKey.rightOption.keyCode, 61)
+        XCTAssertEqual(ModifierKey.shift.keyCode, 56)
+        XCTAssertEqual(ModifierKey.rightShift.keyCode, 60)
+        // …but they carry the same flag.
+        XCTAssertEqual(ModifierKey.option.eventFlag, ModifierKey.rightOption.eventFlag)
+    }
+
+    func testHoldingRightOptionSendsExactlyOneBalancedPair() {
+        let (emitter, poster) = makeEmitter()
+        let stroke = KeyStroke(modifiers: [.rightOption])
+        emitter.performKeyDown(stroke)
+        emitter.performKeyUp(stroke)
+
+        XCTAssertEqual(poster.events, [
+            // The down event carries the flag it is setting; the up event clears it.
+            .init(keyCode: 61, down: true, flags: [.maskAlternate]),
+            .init(keyCode: 61, down: false, flags: []),
+        ])
+    }
+
     func testNoStuckModifierAfterAPress() {
         let (emitter, poster) = makeEmitter()
         emitter.performPress(KeyStroke(.n, modifiers: [.command]))

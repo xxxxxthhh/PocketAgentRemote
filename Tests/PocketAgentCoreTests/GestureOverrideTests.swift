@@ -76,7 +76,7 @@ final class GestureOverrideTests: XCTestCase {
     func testModifierOnlyStrokeKnowsItHasNoKey() {
         XCTAssertTrue(optionShift.isModifiersOnly)
         XCTAssertFalse(KeyStroke(.a).isModifiersOnly)
-        XCTAssertEqual(optionShift.description, "option+shift (held)")
+        XCTAssertEqual(optionShift.description, "option+shift (modifiers only)")
     }
 
     // MARK: - Scoping
