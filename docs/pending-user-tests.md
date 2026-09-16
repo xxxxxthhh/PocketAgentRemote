@@ -71,17 +71,23 @@
 
 ---
 
-## D. Claude 侧
+## D. Claude 侧 —— 已验证 ✅（2026-09-16）
 
-Claude 侧的调研深度不如 Codex，**大部分键位是静态推断而非实测**。
+八个手势全部实测通过。B 层用的是 Claude 菜单里**实测为可用状态**的键
+（避开了没开 Code 会话时是灰的 `⌘J` / `⌘⇧D` / `⌘⇧F`）：
 
-- [ ] 选 `Profile → Claude Code`，在 Claude.app 里试：
-      `B + A`（⌘⇧D 变更）、`B + ←`（⌘⇧I 模型菜单）、`B + ↓`（⌘J 终端）
-- [ ] **已知不可用**：`B + →`（Claude 没有排队动作，日志会显示 `SKIP`）
-- [ ] 特别注意：**Claude 的 Code 面板和 chat 面板语义不同**。同一个 `⌘⇧D` 在两个面板里
-      可能做不同的事，需要你确认哪个面板下可用。
+| 手势 | 键 | 命令 |
+|---|---|---|
+| B + ↑ | `⌘⇧]` | Go > Next Chat |
+| B + ↓ | `⌘⇧[` | Go > Previous Chat |
+| B + ← | `⌘N` | File > New Chat |
+| B + → | `⌘K` | View > Command Palette |
 
----
+做法是 `profileGestureKeyOverrides.claudeCode` —— 两个 App 的快捷键几乎不重叠，
+所以手势映射必须能按 profile 分开。
+
+**仍未验证**：Claude 的 Code 面板相关命令（`⌘J` 终端 / `⌘⇧D` 变更 / `⌘⇧F` 文件 /
+`⌘;` 侧边对话）—— 它们需要先开一个 Code 会话才会启用，本次没测。
 
 ## E. 补齐「没有默认键位」的动作（可选）
 

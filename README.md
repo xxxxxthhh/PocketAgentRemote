@@ -97,11 +97,24 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
     "toggleFastMode": { "key": "f", "modifiers": ["control", "option"] }
   },
   "gestureKeyOverrides": {
-    "b.up":  { "key": "1", "modifiers": ["option", "command"] },
-    "b.tap": { "key": "b", "modifiers": ["command"] }
+    "b.a": { "modifiers": ["rightOption"], "hold": true }
+  },
+  "profileGestureKeyOverrides": {
+    "claudeCode": {
+      "b.up":   { "key": "]", "modifiers": ["command", "shift"] },
+      "b.down": { "key": "[", "modifiers": ["command", "shift"] }
+    }
   }
 }
 ```
+
+三层覆盖，**后者优先**：内置语义绑定 → `gestureKeyOverrides`（全局）→ `profileGestureKeyOverrides`（按 profile）。
+
+**`modifiers` 里的左右侧是分开的**：`option` 是左 Option（keyCode 58），`rightOption` 是右 Option（61）。
+有些目标只认其中一侧（豆包就是），**选错不报错、只是没反应**。同理 `shift`/`rightShift` 等。
+
+**`key` 的写法很自由**：`"a"`、`"1"`、`"]"`、`"up"`、`"esc"`、`"space"` 都可以
+（也接受 `digit1` / `rightBracket` / `upArrow` 这种枚举名）。省略 `key` 就是只按修饰键。
 
 ### `actionKeyOverrides` —— 改「某个动作发什么键」
 
