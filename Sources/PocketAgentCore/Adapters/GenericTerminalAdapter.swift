@@ -9,6 +9,9 @@ public struct GenericTerminalAdapter: ToolAdapter {
 
     public init() {}
 
+    /// No menu for an unknown app: there is no agent to act on, so there is nothing to offer.
+    public var menuItems: [AdapterMenuItem] { [] }
+
     public func support(for action: AgentAction) -> ActionSupport {
         switch action {
         case .navigateUp: return .supported(Recipe.held(.upArrow))

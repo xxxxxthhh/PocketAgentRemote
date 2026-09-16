@@ -77,11 +77,25 @@ final class AdapterTests: XCTestCase {
     // MARK: - Claude
 
     func testClaudeKeyTable() {
+        // `inspectChanges` (⌘⇧D) and `openTerminal` (⌘J) were confirmed against the running app's own
+        // menu on 2026-09-16, cross-checking the research notes.
         XCTAssertEqual(stroke(claude, .inspectChanges), KeyStroke(.d, modifiers: [.command, .shift]))
-        XCTAssertEqual(stroke(claude, .openModelPicker), KeyStroke(.i, modifiers: [.command, .shift]))
+        XCTAssertEqual(stroke(claude, .openTerminal), KeyStroke(.j, modifiers: [.command]))
+        XCTAssertEqual(stroke(claude, .newChat), KeyStroke(.n, modifiers: [.command]))
+        // Still 【static】 only — sendable, but not offered in the menu.
         XCTAssertEqual(stroke(claude, .toggleFastMode), KeyStroke(.f, modifiers: [.command, .option]))
         XCTAssertEqual(stroke(claude, .openPermissionModeMenu), KeyStroke(.m, modifiers: [.command, .shift]))
-        XCTAssertEqual(stroke(claude, .openTerminal), KeyStroke(.j, modifiers: [.command]))
+    }
+
+    func testClaudeModelPickerIsNotBoundBecauseTheOldKeyWasIncognito() {
+        // Regression: this adapter sent ⌘⇧I for "open model menu" (from the web build's shortcut
+        // table). On the desktop app ⌘⇧I opens a **new incognito chat**, so the controller silently
+        // started an anonymous conversation instead. No recipe until the real accelerator is
+        // observed on the desktop app.
+        let support = claude.support(for: .openModelPicker)
+        XCTAssertNil(support.recipe, "⌘⇧I must not be sent for the model picker")
+        XCTAssertFalse(support.note?.isEmpty ?? true, "and the reason must be recorded")
+        XCTAssertNotEqual(stroke(claude, .openModelPicker), KeyStroke(.i, modifiers: [.command, .shift]))
     }
 
     func testClaudeQueueFollowUpIsUnsupported() {

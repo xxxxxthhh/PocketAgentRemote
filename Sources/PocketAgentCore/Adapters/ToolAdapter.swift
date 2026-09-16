@@ -23,10 +23,34 @@ public struct ActionSupport: Equatable, Sendable {
     }
 }
 
+/// A row on the on-screen menu, as the *adapter* declares it.
+///
+/// The adapter — not the generic catalogue — decides what its app can offer, because only the
+/// adapter knows whether a binding was actually verified. That distinction mattered: the menu
+/// originally listed a fixed set of actions for every app, so Claude was offered `切换模型` on the
+/// strength of an unverified `⌘⇧I`, which turned out to be "new incognito chat" — choosing it opened
+/// an anonymous conversation. A row that does the wrong thing is far worse than a row that is
+/// missing.
+public struct AdapterMenuItem: Equatable, Sendable {
+    public var action: AgentAction
+    /// The app's own wording for the command, so the menu reads like that app's menu.
+    public var title: String
+
+    public init(action: AgentAction, title: String) {
+        self.action = action
+        self.title = title
+    }
+}
+
 /// Translates a semantic action into keystrokes for one tool (spec §10.4).
 public protocol ToolAdapter: Sendable {
     var profile: ToolProfile { get }
     func support(for action: AgentAction) -> ActionSupport
+    /// Rows this adapter offers to the on-screen menu, most useful first.
+    ///
+    /// Only list an action whose binding has been **verified against the running app**. An empty
+    /// list means "this app has no menu"; it does not mean "no commands exist".
+    var menuItems: [AdapterMenuItem] { get }
 }
 
 public extension OutputRecipe {

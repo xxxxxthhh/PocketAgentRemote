@@ -50,17 +50,41 @@ final class AgentMenuTests: XCTestCase {
         var config = AppConfig()
         config.profileMode = .manual
         config.activeProfile = .codex
-        let catalog = [MenuItem(action: .toggleFastMode, title: "快速模式")]
-        XCTAssertNil(AgentMenuBuilder.menu(for: config, frontmostBundleID: codex, catalog: catalog),
-                     "a menu with nothing runnable must not be shown at all")
+        let offered = [AdapterMenuItem(action: .toggleFastMode, title: "快速模式")]
+        XCTAssertNil(
+            AgentMenuBuilder.menu(for: config, frontmostBundleID: codex, menuItems: { _ in offered }),
+            "a menu with nothing runnable must not be shown at all"
+        )
     }
 
     func testAnOverrideMakesARowRunnable() {
         var config = AppConfig()
         config.actionKeyOverrides = ["toggleFastMode": AppConfig.KeyBinding(key: .f, modifiers: [.control, .option])]
-        let catalog = [MenuItem(action: .toggleFastMode, title: "快速模式")]
-        let menu = AgentMenuBuilder.menu(for: config, frontmostBundleID: codex, catalog: catalog)
+        let offered = [AdapterMenuItem(action: .toggleFastMode, title: "快速模式")]
+        let menu = AgentMenuBuilder.menu(for: config, frontmostBundleID: codex, menuItems: { _ in offered })
         XCTAssertEqual(menu?.items.map(\.action), [.toggleFastMode])
+    }
+
+    func testClaudeMenuOnlyOffersVerifiedCommands() {
+        // The bug this pins down: Claude's menu used to offer 切换模型 backed by ⌘⇧I, which is
+        // "new incognito chat" on the desktop app — choosing it opened an anonymous conversation.
+        // Rows now come from the adapter, which only lists what was observed working.
+        let claudeMenu = AgentMenuBuilder.menu(
+            for: AppConfig(), frontmostBundleID: claude, frontmostName: "Claude")
+        let actions = claudeMenu?.items.map(\.action) ?? []
+
+        XCTAssertEqual(actions, [.newChat], "only the verified New Chat row for now")
+        XCTAssertFalse(actions.contains(.openModelPicker), "the model picker is not verified for Claude")
+        XCTAssertNil(
+            AdapterCatalog.adapter(for: .claudeCode).support(for: .openModelPicker).recipe,
+            "and it must not be sendable at all"
+        )
+    }
+
+    func testCodexMenuKeepsItsVerifiedRows() {
+        let actions = AgentMenuBuilder.menu(
+            for: AppConfig(), frontmostBundleID: codex, frontmostName: "Codex")?.items.map(\.action) ?? []
+        XCTAssertEqual(actions, [.newChat, .inspectChanges, .openTerminal, .openModelPicker, .archiveChat])
     }
 
     func testNoMenuOutsideTheAgents() {

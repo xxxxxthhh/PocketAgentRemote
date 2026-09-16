@@ -15,6 +15,21 @@ public struct ClaudeDesktopAdapter: ToolAdapter {
         self.overrides = overrides
     }
 
+    /// **Only what has been verified for Claude.**
+    ///
+    /// Deliberately short. The other actions this adapter can name — terminal, changes, model picker,
+    /// permission mode — are marked 【静态】 in `docs/research-claude-desktop.md`, i.e. read out of
+    /// the web build's shortcut table rather than observed on the desktop app, and one of them was
+    /// positively wrong: `⌘⇧I` is **incognito chat**, not the model menu (that is `⌘⇧.`). Offering a
+    /// row on an unverified binding sent the wrong command, so an unverified action stays out of the
+    /// menu until someone watches it work.
+    public var menuItems: [AdapterMenuItem] {
+        [
+            // File > New Chat = ⌘N, read from the running app's menu on 2026-09-16.
+            AdapterMenuItem(action: .newChat, title: "新建对话"),
+        ]
+    }
+
     public func support(for action: AgentAction) -> ActionSupport {
         if let stroke = overrides[action] {
             return .supported(OutputRecipe(
@@ -36,11 +51,22 @@ public struct ClaudeDesktopAdapter: ToolAdapter {
         case .submit: return .supported(Recipe.press(.enter))
         case .cancelOrInterrupt: return .supported(Recipe.press(.escape))
 
+        // Verified against the running app's menu on 2026-09-16: `View > Show Changes` is ⌘⇧D and
+        // `View > Show Terminal` is ⌘J (both currently [OFF] in a plain chat, by the app's own rule).
         case .inspectChanges: return .supported(Recipe.tool(.d, [.command, .shift]))   // toggleDiff
-        case .openModelPicker: return .supported(Recipe.tool(.i, [.command, .shift]))  // openModelMenu
+        case .openTerminal: return .supported(Recipe.tool(.j, [.command]))             // Show Terminal
+
+        // `openModelPicker` is **deliberately unsupported**, and unsupported for a reason worth
+        // recording: this adapter used to send ⌘⇧I, taken from the web build's shortcut table. On the
+        // desktop app ⌘⇧I is *new incognito chat* — so "切换模型" silently opened an anonymous
+        // conversation. The model menu's real accelerator is not in the app's menu at all
+        // (`model_selector` = ⌘⇧. in the web build), so it needs to be observed on the desktop app
+        // before this can be mapped. Until then: no recipe, no menu row.
+        case .openModelPicker:
+            return .unsupported("⌘⇧I turned out to be new incognito chat; the desktop model menu needs verifying first")
+
         case .toggleFastMode: return .supported(Recipe.tool(.f, [.command, .option]))  // toggleFastMode
         case .openPermissionModeMenu: return .supported(Recipe.tool(.m, [.command, .shift]))  // openModeMenu
-        case .openTerminal: return .supported(Recipe.tool(.j, [.command]))             // Show Terminal
 
         // Verified against the *live* menu on 2026-09-16 with `Tools/dump-menu-accelerators.swift`:
         // `File > New Chat` is ⌘N. The earlier note that this surface was unverified was simply

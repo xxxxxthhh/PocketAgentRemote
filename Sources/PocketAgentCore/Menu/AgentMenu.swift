@@ -78,38 +78,30 @@ public struct AgentMenu {
 /// ships no key binding on Codex, and a row that silently does nothing when chosen is worse than a
 /// row that is not there.
 public enum AgentMenuBuilder {
-    /// The order rows appear in, most useful first, with the labels the menu shows.
-    ///
-    /// Kept short on purpose (first version: three rows). The B-layer direct bindings stay direct —
-    /// the menu is for actions that are worth a visible confirmation, not a replacement for muscle
-    /// memory.
-    public static let catalog: [MenuItem] = [
-        MenuItem(action: .newChat, title: "新建会话"),
-        MenuItem(action: .inspectChanges, title: "查看变更"),
-        MenuItem(action: .openTerminal, title: "打开终端"),
-        MenuItem(action: .openModelPicker, title: "切换模型"),
-        MenuItem(action: .archiveChat, title: "归档会话"),
-    ]
-
     /// The menu for the current frontmost app, or nil when it is not one of the agents.
     ///
-    /// Nil (rather than an empty menu) is the honest answer for "you are in a browser": there is no
-    /// agent to act on, so there is nothing to show.
+    /// Rows come from the **adapter**, which is the only layer that knows whether a binding was
+    /// actually verified for that app. A fixed catalogue here (as an earlier version had) offered
+    /// Claude a `切换模型` row backed by an unverified `⌘⇧I`, which on the desktop app is *new
+    /// incognito chat* — so the row silently did the wrong thing.
+    ///
+    /// Nil (rather than an empty menu) is the honest answer for "you are in a browser" or for an app
+    /// the adapter offers nothing for: there is nothing to show.
     public static func menu(
         for config: AppConfig,
         frontmostBundleID: String?,
         frontmostName: String? = nil,
-        catalog: [MenuItem] = AgentMenuBuilder.catalog
+        menuItems: ((ToolAdapter) -> [AdapterMenuItem])? = nil
     ) -> AgentMenu? {
         let profile = config.resolvedProfile(frontmostBundleID: frontmostBundleID)
         guard profile != .genericTerminal else { return nil }
 
         let adapter = AdapterCatalog.adapter(for: profile, overrides: config.overrides)
-        let rows = catalog.filter { item in
-            // An action with no recipe (and no override) cannot run; leave it out instead of
-            // offering a row that does nothing.
-            adapter.support(for: item.action).recipe != nil
-        }
+        let offered = (menuItems ?? { $0.menuItems })(adapter)
+        let rows = offered
+            // Defence in depth: even a listed row has to be runnable by this adapter right now.
+            .filter { adapter.support(for: $0.action).recipe != nil }
+            .map { MenuItem(action: $0.action, title: $0.title) }
         guard !rows.isEmpty else { return nil }
 
         let name = config.agentPair.name(for: frontmostBundleID ?? "")
