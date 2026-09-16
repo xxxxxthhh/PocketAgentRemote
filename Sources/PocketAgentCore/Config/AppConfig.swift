@@ -1,9 +1,30 @@
 import Foundation
 
+/// How the active tool profile is chosen.
+///
+/// The spec originally required the profile to be explicit and never inferred, because v0.1's plan
+/// was to guess which agent was running *inside a terminal* — genuinely unreliable on macOS. Reading
+/// the frontmost application's bundle ID is a different proposition: it is exact, and it is the same
+/// signal the guard already uses. So automatic switching is offered, with the reasoning recorded
+/// rather than the rule quietly dropped.
+public enum ProfileMode: String, Codable, CaseIterable, Sendable {
+    /// The user picks the profile in the menu; the frontmost app is only checked against the allowlist.
+    case manual
+    /// The frontmost app picks the profile. Unknown apps fall back to `fallbackProfile`.
+    case auto
+}
+
 /// Persisted settings (spec §16).
 public struct AppConfig: Codable, Equatable, Sendable {
     public var version: Int
     public var activeProfile: ToolProfile
+
+    /// How `activeProfile` is chosen at any given moment.
+    public var profileMode: ProfileMode
+    /// Which profile each frontmost bundle ID selects, used in `.auto` mode.
+    public var autoProfileBundleIDs: [String: String]
+    /// Profile used in `.auto` mode when the frontmost app is not in `autoProfileBundleIDs`.
+    public var fallbackProfile: ToolProfile
 
     // Gesture timing (spec §6.2 / §18).
     public var tapMaxMs: Double
@@ -76,6 +97,9 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public init(
         version: Int = AppConfig.currentVersion,
         activeProfile: ToolProfile = .genericTerminal,
+        profileMode: ProfileMode = .auto,
+        autoProfileBundleIDs: [String: String] = AppConfig.defaultAutoProfileBundleIDs,
+        fallbackProfile: ToolProfile = .genericTerminal,
         tapMaxMs: Double = 220,
         holdMs: Double = 450,
         macrosEnabled: Bool = false,
@@ -87,6 +111,9 @@ public struct AppConfig: Codable, Equatable, Sendable {
     ) {
         self.version = version
         self.activeProfile = activeProfile
+        self.profileMode = profileMode
+        self.autoProfileBundleIDs = autoProfileBundleIDs
+        self.fallbackProfile = fallbackProfile
         self.tapMaxMs = tapMaxMs
         self.holdMs = holdMs
         self.macrosEnabled = macrosEnabled
@@ -98,7 +125,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, activeProfile, tapMaxMs, holdMs
+        case version, activeProfile, profileMode, autoProfileBundleIDs, fallbackProfile
+        case tapMaxMs, holdMs
         case macrosEnabled, requireAllowedFrontmostApp, allowedBundleIDs
         case actionKeyOverrides, gestureKeyOverrides, profileGestureKeyOverrides
     }
@@ -113,6 +141,11 @@ public struct AppConfig: Codable, Equatable, Sendable {
         let defaults = AppConfig()
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? defaults.version
         activeProfile = try container.decodeIfPresent(ToolProfile.self, forKey: .activeProfile) ?? defaults.activeProfile
+        profileMode = try container.decodeIfPresent(ProfileMode.self, forKey: .profileMode) ?? defaults.profileMode
+        autoProfileBundleIDs = try container.decodeIfPresent([String: String].self, forKey: .autoProfileBundleIDs)
+            ?? defaults.autoProfileBundleIDs
+        fallbackProfile = try container.decodeIfPresent(ToolProfile.self, forKey: .fallbackProfile)
+            ?? defaults.fallbackProfile
         tapMaxMs = try container.decodeIfPresent(Double.self, forKey: .tapMaxMs) ?? defaults.tapMaxMs
         holdMs = try container.decodeIfPresent(Double.self, forKey: .holdMs) ?? defaults.holdMs
         macrosEnabled = try container.decodeIfPresent(Bool.self, forKey: .macrosEnabled) ?? defaults.macrosEnabled
@@ -140,6 +173,48 @@ public struct AppConfig: Codable, Equatable, Sendable {
         "com.microsoft.VSCode",
         "com.apple.dt.Xcode",
     ]
+
+    /// Which profile each app selects in `.auto` mode.
+    public static let defaultAutoProfileBundleIDs = [
+        "com.openai.codex": ToolProfile.codex.rawValue,
+        "com.anthropic.claudefordesktop": ToolProfile.claudeCode.rawValue,
+    ]
+
+    /// The profile in force right now.
+    ///
+    /// In `.manual` mode this is just `activeProfile`. In `.auto` mode it follows the frontmost
+    /// application, falling back to `fallbackProfile` for anything unrecognised — which is what
+    /// makes the allowlist redundant there: an unknown app can only ever get the generic profile,
+    /// whose actions are arrows, Enter and Escape.
+    public func resolvedProfile(frontmostBundleID: String?) -> ToolProfile {
+        switch profileMode {
+        case .manual:
+            return activeProfile
+        case .auto:
+            guard let bundleID = frontmostBundleID,
+                  let raw = autoProfileBundleIDs[bundleID],
+                  let profile = ToolProfile(rawValue: raw)
+            else { return fallbackProfile }
+            return profile
+        }
+    }
+
+    /// The guard policy in force right now.
+    ///
+    /// Auto mode drops the frontmost-app check rather than duplicating it: the profile was *derived*
+    /// from the frontmost app, so a tool-specific action can only fire when its own app is in front.
+    public var effectiveGuardPolicy: GuardPolicy {
+        switch profileMode {
+        case .manual:
+            return guardPolicy
+        case .auto:
+            return GuardPolicy(
+                allowedBundleIDs: [],
+                requireAllowedFrontmostApp: false,
+                macrosEnabled: macrosEnabled
+            )
+        }
+    }
 
     public var gestureConfiguration: GestureConfiguration {
         GestureConfiguration(tapMaxMs: tapMaxMs, holdMs: holdMs)

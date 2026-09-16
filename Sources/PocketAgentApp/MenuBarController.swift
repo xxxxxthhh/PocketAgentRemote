@@ -46,19 +46,42 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // Status
         let state = environment.connectedDevice.map { "Connected: \($0)" } ?? "No controller connected"
         menu.addItem(disabled(state))
-        menu.addItem(disabled("Profile: \(profileTitle(environment.activeProfile))"))
+        if environment.profileMode == .auto {
+            menu.addItem(disabled("Profile: \(profileTitle(environment.activeProfile))  (auto)"))
+        } else {
+            menu.addItem(disabled("Profile: \(profileTitle(environment.activeProfile))  (manual)"))
+        }
         menu.addItem(disabled("Frontmost: \(environment.frontmostObserver.frontmostAppName() ?? "unknown")"))
         menu.addItem(.separator())
 
-        // Profile picker — explicit, never inferred (spec §6.4).
+        // Profile mode — auto follows the frontmost app.
+        let modeItem = NSMenuItem(title: "Profile Mode", action: nil, keyEquivalent: "")
+        let modeMenu = NSMenu()
+        for mode in ProfileMode.allCases {
+            let item = NSMenuItem(title: modeTitle(mode), action: #selector(selectProfileMode(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            item.state = mode == environment.profileMode ? .on : .off
+            modeMenu.addItem(item)
+        }
+        modeItem.submenu = modeMenu
+        menu.addItem(modeItem)
+
+        // Profile picker — only meaningful in manual mode (spec §6.4).
         let profileItem = NSMenuItem(title: "Profile", action: nil, keyEquivalent: "")
         let profileMenu = NSMenu()
+        let autoMode = environment.profileMode == .auto
         for profile in ToolProfile.allCases {
             let item = NSMenuItem(title: profileTitle(profile), action: #selector(selectProfile(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = profile.rawValue
             item.state = profile == environment.activeProfile ? .on : .off
+            item.isEnabled = !autoMode
             profileMenu.addItem(item)
+        }
+        if autoMode {
+            profileMenu.addItem(.separator())
+            profileMenu.addItem(disabled("Auto — switch to Manual to pick one"))
         }
         profileItem.submenu = profileMenu
         menu.addItem(profileItem)
@@ -128,6 +151,19 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         case .codex: return "Codex"
         case .claudeCode: return "Claude Code"
         }
+    }
+
+    private func modeTitle(_ mode: ProfileMode) -> String {
+        switch mode {
+        case .auto: return "Auto — follow the frontmost app"
+        case .manual: return "Manual — pick one below"
+        }
+    }
+
+    @objc private func selectProfileMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let mode = ProfileMode(rawValue: raw) else { return }
+        environment.setProfileMode(mode)
     }
 
     private func disabled(_ title: String) -> NSMenuItem {

@@ -11,6 +11,8 @@ private final class SpyEmitter: InputEmitting {
 
     private(set) var events: [Event] = []
 
+    func reset() { events.removeAll() }
+
     func press(_ stroke: KeyStroke) { events.append(.press(stroke)) }
     func keyDown(_ stroke: KeyStroke) { events.append(.down(stroke)) }
     func keyUp(_ stroke: KeyStroke) { events.append(.up(stroke)) }
@@ -28,9 +30,11 @@ final class DispatcherTests: XCTestCase {
         profile: ToolProfile,
         frontmost: String? = "com.openai.codex",
         allowed: [String] = ["com.openai.codex"],
-        overrides: [String: AppConfig.KeyBinding] = [:]
+        overrides: [String: AppConfig.KeyBinding] = [:],
+        mode: ProfileMode = .manual
     ) -> (ActionDispatcher, SpyEmitter, StubFrontmost) {
         var config = AppConfig()
+        config.profileMode = mode
         config.activeProfile = profile
         config.allowedBundleIDs = allowed
         config.actionKeyOverrides = overrides
@@ -123,6 +127,42 @@ final class DispatcherTests: XCTestCase {
     func testKeyOverrideStillObeysTheAllowlist() {
         let (dispatcher, emitter, _) = makeDispatcher(profile: .codex, frontmost: "com.apple.mail")
         dispatcher.dispatch(.raw(KeyStroke(.b, modifiers: [.command]), .press))
+        XCTAssertTrue(emitter.events.isEmpty)
+    }
+
+    func testAutoModeFollowsTheFrontmostApp() {
+        // The whole point of auto mode: no menu clicking when switching between the two agents.
+        let (dispatcher, emitter, frontmost) = makeDispatcher(profile: .genericTerminal, mode: .auto)
+
+        frontmost.bundleID = "com.openai.codex"
+        dispatcher.dispatch(.press(.goToRecentChat1))   // Codex action
+        XCTAssertEqual(emitter.events, [.press(KeyStroke(.digit1, modifiers: [.command, .option]))])
+
+        emitter.reset()
+        frontmost.bundleID = "com.anthropic.claudefordesktop"
+        dispatcher.dispatch(.press(.goToRecentChat1))
+        XCTAssertTrue(emitter.events.isEmpty, "Claude cannot do this; it must not fire a Codex shortcut")
+
+        emitter.reset()
+        frontmost.bundleID = "com.apple.mail"
+        dispatcher.dispatch(.press(.submit))
+        XCTAssertEqual(emitter.events, [.press(.key(.enter))], "unknown apps fall back to the generic profile")
+    }
+
+    func testAutoModeDropsTheAllowlistBecauseTheProfileAlreadyEncodesIt() {
+        // In manual mode an unlisted app blocks everything. In auto mode the profile is *derived*
+        // from the frontmost app, so an unknown app can only ever reach the generic profile — the
+        // allowlist would be a second copy of the same check.
+        let (dispatcher, emitter, _) = makeDispatcher(
+            profile: .genericTerminal, frontmost: "com.apple.mail", allowed: [], mode: .auto)
+        dispatcher.dispatch(.press(.cancelOrInterrupt))
+        XCTAssertEqual(emitter.events, [.press(.key(.escape))])
+    }
+
+    func testManualModeStillObeysTheAllowlist() {
+        let (dispatcher, emitter, _) = makeDispatcher(
+            profile: .codex, frontmost: "com.apple.mail", allowed: ["com.openai.codex"], mode: .manual)
+        dispatcher.dispatch(.press(.newChat))
         XCTAssertTrue(emitter.events.isEmpty)
     }
 

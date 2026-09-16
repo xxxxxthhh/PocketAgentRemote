@@ -83,6 +83,12 @@ final class AppEnvironment {
             let label = action?.rawValue ?? "<gesture override>"
             self?.debugLog.append("DENY", "\(label): \(reason)")
         }
+
+        // In auto mode the profile follows the frontmost app, so the gesture table is re-resolved
+        // before every event.
+        engine.gestureOverridesProvider = { [weak self] in
+            self?.gestureOverridesForCurrentFrontmostApp() ?? [:]
+        }
     }
 
     private static func describe(_ event: ResolvedEvent) -> String {
@@ -115,23 +121,40 @@ final class AppEnvironment {
 
     // MARK: - Menu actions
 
-    var activeProfile: ToolProfile { configStore.config.activeProfile }
+    /// The profile in force right now — in auto mode this follows the frontmost application.
+    var activeProfile: ToolProfile {
+        configStore.config.resolvedProfile(frontmostBundleID: frontmostObserver.frontmostBundleID())
+    }
+
+    var profileMode: ProfileMode { configStore.config.profileMode }
+
+    func setProfileMode(_ mode: ProfileMode) {
+        configStore.update { $0.profileMode = mode }
+        applyGestureOverrides()
+        debugLog.append("APP", "profile mode → \(mode.rawValue)")
+        onStatusChange?()
+    }
 
     func setProfile(_ profile: ToolProfile) {
-        configStore.update { $0.activeProfile = profile }
+        // Picking a profile by hand only makes sense in manual mode.
+        configStore.update {
+            $0.activeProfile = profile
+            $0.profileMode = .manual
+        }
         applyGestureOverrides()
-        debugLog.append("APP", "profile → \(profile.rawValue)")
+        debugLog.append("APP", "profile → \(profile.rawValue) (manual)")
         onStatusChange?()
     }
 
     /// Gesture bindings can differ per profile (Codex and Claude share almost no shortcuts), so this
-    /// has to run on both a profile switch and a config reload.
+    /// has to run on a profile switch, a mode switch and a config reload.
     private func applyGestureOverrides() {
         let config = configStore.config
-        let overrides = config.gestureOverrides(for: config.activeProfile)
+        let profile = config.resolvedProfile(frontmostBundleID: frontmostObserver.frontmostBundleID())
+        let overrides = config.gestureOverrides(for: profile)
         engine.gestureOverrides = overrides
 
-        let unknownGestures = config.unknownGestureIDs(for: config.activeProfile)
+        let unknownGestures = config.unknownGestureIDs(for: profile)
         if !unknownGestures.isEmpty {
             debugLog.append("APP", "unrecognised gesture ids (ignored): \(unknownGestures.joined(separator: ", "))")
         }
@@ -139,7 +162,14 @@ final class AppEnvironment {
         if !unknownProfiles.isEmpty {
             debugLog.append("APP", "unrecognised profile names (ignored): \(unknownProfiles.joined(separator: ", "))")
         }
-        debugLog.append("APP", "gesture overrides for \(config.activeProfile.rawValue): \(overrides.count)")
+        debugLog.append("APP", "gesture overrides for \(profile.rawValue) [\(config.profileMode.rawValue)]: \(overrides.count)")
+    }
+
+    /// Auto mode follows the frontmost app, so the override table has to be re-resolved per event.
+    private func gestureOverridesForCurrentFrontmostApp() -> [String: GestureOverride] {
+        let config = configStore.config
+        let profile = config.resolvedProfile(frontmostBundleID: frontmostObserver.frontmostBundleID())
+        return config.gestureOverrides(for: profile)
     }
 
     func setMacrosEnabled(_ enabled: Bool) {

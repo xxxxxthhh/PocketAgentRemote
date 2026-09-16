@@ -26,12 +26,19 @@ public final class ControllerEngine {
 
     public let recognizer: GestureRecognizer
 
-    /// Per-gesture keystroke overrides from config. Settable so a config reload takes effect without
-    /// relaunching.
+    /// Per-gesture keystroke overrides from config. Settable so a config reload or a manual profile
+    /// switch takes effect without relaunching.
     public var gestureOverrides: [String: GestureOverride] {
         get { resolver.gestureOverrides }
         set { resolver = EventResolver(bindings: resolver.bindings, gestureOverrides: newValue) }
     }
+
+    /// Supplies the gesture overrides in force *right now*, consulted before each event.
+    ///
+    /// Needed for automatic profile switching: the same gesture resolves to `⌥⌘1` in Codex and `⌘⇧]`
+    /// in Claude, and which one applies depends on the frontmost app at the moment of the press —
+    /// not on whatever was configured when the engine was built.
+    public var gestureOverridesProvider: (() -> [String: GestureOverride])?
 
     private let coordinator: ControllerInputCoordinator
     private var resolver: EventResolver
@@ -66,6 +73,7 @@ public final class ControllerEngine {
 
         coordinator.onEvent = { [weak self] event in
             guard let self else { return }
+            self.syncGestureOverridesIfNeeded()
             self.onRawEvent?(event)
             self.recognizer.handle(event)
         }
@@ -88,5 +96,14 @@ public final class ControllerEngine {
         running = false
         coordinator.stop()
         recognizer.resetAndEmit()
+    }
+
+    /// Swaps the resolver only when the override table actually changed — the frontmost app is
+    /// consulted per event, and rebuilding a resolver on every event would be wasteful.
+    private func syncGestureOverridesIfNeeded() {
+        guard let provider = gestureOverridesProvider else { return }
+        let overrides = provider()
+        guard overrides != resolver.gestureOverrides else { return }
+        resolver = EventResolver(bindings: resolver.bindings, gestureOverrides: overrides)
     }
 }

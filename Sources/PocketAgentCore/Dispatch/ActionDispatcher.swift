@@ -52,7 +52,11 @@ public final class ActionDispatcher: ActionDispatching {
 
     public func dispatch(_ trigger: ActionTrigger) {
         let config = configProvider()
-        let profile = config.activeProfile
+        let frontmostBundleID = frontmost.frontmostBundleID()
+        // The profile may be derived from the frontmost app (config.profileMode == .auto), so it has
+        // to be resolved here rather than read once at startup.
+        let profile = config.resolvedProfile(frontmostBundleID: frontmostBundleID)
+        let policy = config.effectiveGuardPolicy
 
         // A gesture bound straight to a keystroke skips the adapter, but not the guard.
         if case .raw(let stroke, let phase) = trigger {
@@ -62,7 +66,7 @@ public final class ActionDispatcher: ActionDispatching {
                 // case (holding ⌥⇧ to trigger an input method's voice input) only works if it fires
                 // while the user is typing in *any* app. Requiring an allowlisted frontmost app
                 // would make it useless.
-                emitRaw(stroke, phase: phase, frontmostBundleID: frontmost.frontmostBundleID())
+                emitRaw(stroke, phase: phase, frontmostBundleID: frontmostBundleID)
                 return
             }
 
@@ -72,8 +76,7 @@ public final class ActionDispatcher: ActionDispatching {
                 requiresExplicitProfile: true,
                 allowsRepeat: false
             )
-            let frontmostBundleID = frontmost.frontmostBundleID()
-            let decision = ActionGuard(policy: config.guardPolicy)
+            let decision = ActionGuard(policy: policy)
                 .evaluate(recipe: recipe, profile: profile, frontmostBundleID: frontmostBundleID)
             guard decision.isAllowed else {
                 if case .deny(let reason) = decision { onDenied?(nil, reason) }
@@ -95,8 +98,7 @@ public final class ActionDispatcher: ActionDispatching {
             return
         }
 
-        let frontmostBundleID = frontmost.frontmostBundleID()
-        let decision = ActionGuard(policy: config.guardPolicy)
+        let decision = ActionGuard(policy: policy)
             .evaluate(recipe: recipe, profile: profile, frontmostBundleID: frontmostBundleID)
 
         guard decision.isAllowed else {
