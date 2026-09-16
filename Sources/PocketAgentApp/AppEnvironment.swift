@@ -46,7 +46,7 @@ final class AppEnvironment {
 
         engine = ControllerEngine(
             dispatcher: dispatcher,
-            gestureOverrides: config.gestureOverrides,
+            gestureOverrides: config.gestureOverrides(for: config.activeProfile),
             configuration: config.gestureConfiguration
         )
 
@@ -119,8 +119,27 @@ final class AppEnvironment {
 
     func setProfile(_ profile: ToolProfile) {
         configStore.update { $0.activeProfile = profile }
+        applyGestureOverrides()
         debugLog.append("APP", "profile → \(profile.rawValue)")
         onStatusChange?()
+    }
+
+    /// Gesture bindings can differ per profile (Codex and Claude share almost no shortcuts), so this
+    /// has to run on both a profile switch and a config reload.
+    private func applyGestureOverrides() {
+        let config = configStore.config
+        let overrides = config.gestureOverrides(for: config.activeProfile)
+        engine.gestureOverrides = overrides
+
+        let unknownGestures = config.unknownGestureIDs(for: config.activeProfile)
+        if !unknownGestures.isEmpty {
+            debugLog.append("APP", "unrecognised gesture ids (ignored): \(unknownGestures.joined(separator: ", "))")
+        }
+        let unknownProfiles = config.unknownProfileNames
+        if !unknownProfiles.isEmpty {
+            debugLog.append("APP", "unrecognised profile names (ignored): \(unknownProfiles.joined(separator: ", "))")
+        }
+        debugLog.append("APP", "gesture overrides for \(config.activeProfile.rawValue): \(overrides.count)")
     }
 
     func setMacrosEnabled(_ enabled: Bool) {
@@ -140,12 +159,9 @@ final class AppEnvironment {
         // Pick up timing and binding changes without a relaunch; the profile and guard are read
         // per dispatch.
         engine.recognizer.configuration = configStore.config.gestureConfiguration
-        engine.gestureOverrides = configStore.config.gestureOverrides
-        let unknown = configStore.config.unknownGestureIDs
-        if !unknown.isEmpty {
-            debugLog.append("APP", "unrecognised gesture ids in config (ignored): \(unknown.joined(separator: ", "))")
-        }
-        debugLog.append("APP", "config reloaded (tapMaxMs=\(configStore.config.tapMaxMs), holdMs=\(configStore.config.holdMs), gestureOverrides=\(configStore.config.gestureOverrides.count))")
+        applyGestureOverrides()
+        let config = configStore.config
+        debugLog.append("APP", "config reloaded (tapMaxMs=\(config.tapMaxMs), holdMs=\(config.holdMs))")
         onStatusChange?()
     }
 

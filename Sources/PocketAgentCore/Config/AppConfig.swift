@@ -28,6 +28,13 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// vocabulary stays small while the reachable command set becomes the whole Codex shortcut list.
     public var gestureKeyOverrides: [String: KeyBinding]
 
+    /// Per-profile gesture overrides: `profile raw value` → `gesture identifier` → binding.
+    ///
+    /// Needed because the two tools have disjoint shortcut sets: `⌥⌘1` jumps to a chat in Codex and
+    /// does nothing in Claude, whose equivalents are `⌘⇧[` / `⌘⇧]`. A profile-specific entry wins
+    /// over the global `gestureKeyOverrides`.
+    public var profileGestureKeyOverrides: [String: [String: KeyBinding]]
+
     public struct KeyBinding: Codable, Equatable, Sendable {
         /// Nil means **modifiers only**, e.g. `{ "modifiers": ["option", "shift"] }` — no character
         /// key is pressed.
@@ -75,7 +82,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         requireAllowedFrontmostApp: Bool = true,
         allowedBundleIDs: [String] = AppConfig.defaultAllowedBundleIDs,
         actionKeyOverrides: [String: KeyBinding] = [:],
-        gestureKeyOverrides: [String: KeyBinding] = [:]
+        gestureKeyOverrides: [String: KeyBinding] = [:],
+        profileGestureKeyOverrides: [String: [String: KeyBinding]] = [:]
     ) {
         self.version = version
         self.activeProfile = activeProfile
@@ -86,12 +94,13 @@ public struct AppConfig: Codable, Equatable, Sendable {
         self.allowedBundleIDs = allowedBundleIDs
         self.actionKeyOverrides = actionKeyOverrides
         self.gestureKeyOverrides = gestureKeyOverrides
+        self.profileGestureKeyOverrides = profileGestureKeyOverrides
     }
 
     private enum CodingKeys: String, CodingKey {
         case version, activeProfile, tapMaxMs, holdMs
         case macrosEnabled, requireAllowedFrontmostApp, allowedBundleIDs
-        case actionKeyOverrides, gestureKeyOverrides
+        case actionKeyOverrides, gestureKeyOverrides, profileGestureKeyOverrides
     }
 
     /// Tolerant decoding: **every** field falls back to its default when absent.
@@ -113,6 +122,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
             ?? defaults.allowedBundleIDs
         actionKeyOverrides = try container.decodeIfPresent([String: KeyBinding].self, forKey: .actionKeyOverrides) ?? [:]
         gestureKeyOverrides = try container.decodeIfPresent([String: KeyBinding].self, forKey: .gestureKeyOverrides) ?? [:]
+        profileGestureKeyOverrides = try container.decodeIfPresent(
+            [String: [String: KeyBinding]].self,
+            forKey: .profileGestureKeyOverrides
+        ) ?? [:]
     }
 
     public static let currentVersion = 1
@@ -152,10 +165,25 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// Gesture overrides with unknown identifiers dropped, so a typo degrades to "that one gesture
     /// keeps its default" rather than silently doing nothing.
     public var gestureOverrides: [String: GestureOverride] {
-        var result: [String: GestureOverride] = [:]
+        resolvedGestureOverrides(profile: nil)
+    }
+
+    /// The overrides in force for a profile: global entries first, then that profile's own entries
+    /// on top.
+    public func gestureOverrides(for profile: ToolProfile) -> [String: GestureOverride] {
+        resolvedGestureOverrides(profile: profile)
+    }
+
+    private func resolvedGestureOverrides(profile: ToolProfile?) -> [String: GestureOverride] {
         let known = Set(GestureID.all)
+        var result: [String: GestureOverride] = [:]
         for (gesture, binding) in gestureKeyOverrides where known.contains(gesture) {
             result[gesture] = binding.gestureOverride
+        }
+        if let profile, let specific = profileGestureKeyOverrides[profile.rawValue] {
+            for (gesture, binding) in specific where known.contains(gesture) {
+                result[gesture] = binding.gestureOverride
+            }
         }
         return result
     }
@@ -163,8 +191,22 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// Gesture identifiers the config used that we do not recognise — surfaced by the menu so a
     /// typo is visible instead of silently ignored.
     public var unknownGestureIDs: [String] {
+        unknownGestureIDs(for: nil)
+    }
+
+    public func unknownGestureIDs(for profile: ToolProfile?) -> [String] {
         let known = Set(GestureID.all)
-        return gestureKeyOverrides.keys.filter { !known.contains($0) }.sorted()
+        var unknown = Set(gestureKeyOverrides.keys.filter { !known.contains($0) })
+        if let profile, let specific = profileGestureKeyOverrides[profile.rawValue] {
+            unknown.formUnion(specific.keys.filter { !known.contains($0) })
+        }
+        return unknown.sorted()
+    }
+
+    /// Profile names that are not real profiles — same reasoning as unknown gesture ids.
+    public var unknownProfileNames: [String] {
+        let known = Set(ToolProfile.allCases.map(\.rawValue))
+        return profileGestureKeyOverrides.keys.filter { !known.contains($0) }.sorted()
     }
 }
 

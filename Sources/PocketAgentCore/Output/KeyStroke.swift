@@ -67,6 +67,35 @@ public enum Key: String, Codable, CaseIterable, Sendable {
     case minus, equal, leftBracket, rightBracket, backslash
     case semicolon, quote, comma, period, slash, grave
 
+    /// Names a person would naturally type in the config, mapped onto the cases above.
+    ///
+    /// `digit1` is the case name, but nobody writes `{"key": "digit1"}` — they write `{"key": "1"}`.
+    /// Failing that lookup would mean a hand-edited config silently refusing to load.
+    private static let aliases: [String: Key] = [
+        "0": .digit0, "1": .digit1, "2": .digit2, "3": .digit3, "4": .digit4,
+        "5": .digit5, "6": .digit6, "7": .digit7, "8": .digit8, "9": .digit9,
+        "-": .minus, "=": .equal, "+": .equal,
+        "[": .leftBracket, "]": .rightBracket, "\\": .backslash,
+        ";": .semicolon, "'": .quote, ",": .comma, ".": .period, "/": .slash, "`": .grave,
+        "up": .upArrow, "down": .downArrow, "left": .leftArrow, "right": .rightArrow,
+        "return": .enter, "esc": .escape, "spacebar": .space,
+    ]
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        if let key = Key(rawValue: raw) {
+            self = key
+        } else if let key = Key.aliases[raw] {
+            self = key
+        } else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "unknown key \"\(raw)\"; use a letter, a digit, or one of \(Key.aliases.keys.sorted().joined(separator: " "))"
+            )
+        }
+    }
+
     public var keyCode: CGKeyCode {
         switch self {
         case .upArrow: return 126

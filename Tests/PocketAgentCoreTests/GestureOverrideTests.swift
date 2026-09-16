@@ -163,6 +163,45 @@ final class ConfigCompatibilityTests: XCTestCase {
         XCTAssertTrue(config.gestureOverrides["b.a"]?.isHeld ?? false)
     }
 
+    func testProfileSpecificOverridesWinOverGlobal() throws {
+        // Codex and Claude share almost no shortcuts, so the same gesture has to resolve differently
+        // per profile: ⌥⌘1 jumps to a chat in Codex and does nothing in Claude.
+        let json = """
+        {
+          "gestureKeyOverrides" : { "b.up" : { "key" : "1", "modifiers" : [ "command" ] } },
+          "profileGestureKeyOverrides" : {
+            "claudeCode" : { "b.up" : { "key" : "rightBracket", "modifiers" : [ "command", "shift" ] } },
+            "notAProfile" : { "b.up" : { "key" : "z" } }
+          }
+        }
+        """
+        let config = try JSONDecoder().decode(AppConfig.self, from: Data(json.utf8))
+
+        XCTAssertEqual(
+            config.gestureOverrides(for: .codex)["b.up"]?.stroke,
+            KeyStroke(.digit1, modifiers: [.command]),
+            "a profile without its own entry keeps the global binding"
+        )
+        XCTAssertEqual(
+            config.gestureOverrides(for: .claudeCode)["b.up"]?.stroke,
+            KeyStroke(.rightBracket, modifiers: [.command, .shift])
+        )
+        XCTAssertEqual(
+            config.gestureOverrides(for: .genericTerminal)["b.up"]?.stroke,
+            KeyStroke(.digit1, modifiers: [.command])
+        )
+        XCTAssertEqual(config.unknownProfileNames, ["notAProfile"])
+    }
+
+    func testProfileOverridesCanAddGesturesTheGlobalMapDoesNotMention() throws {
+        let json = """
+        { "profileGestureKeyOverrides" : { "claudeCode" : { "b.right" : { "key" : "k", "modifiers" : [ "command" ] } } } }
+        """
+        let config = try JSONDecoder().decode(AppConfig.self, from: Data(json.utf8))
+        XCTAssertTrue(config.gestureOverrides(for: .codex).isEmpty)
+        XCTAssertEqual(config.gestureOverrides(for: .claudeCode)["b.right"]?.stroke, KeyStroke(.k, modifiers: [.command]))
+    }
+
     func testRoundTripThroughDiskKeepsGestureOverrides() throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("pocketagent-gesture-\(UUID().uuidString)")
