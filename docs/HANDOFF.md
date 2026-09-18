@@ -452,7 +452,8 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 |---|---|
 | **`docs/HANDOFF.md`** | **本文档 —— 当前真实状态，优先读** |
 | `docs/spec-v0.3.md` | 设计意图（与实现有偏离，见 §6） |
-| `docs/pending-user-tests.md` | 待验证清单（A–H 节，多数已勾） |
+| `docs/pending-user-tests.md` | 待验证清单（A–L 节，多数已勾） |
+| `docs/ux-roadmap.md` | 体验增强路线图（功能 F1–F10 + UI U1–U4，含实施批次与验证标准） |
 | `docs/phase0-summary.md` | 硬件实测结论与 7 条硬性约束 |
 | `docs/phase1-verification.md` | Phase 1 真机验证记录 |
 | `docs/hardware-probe.md` | Phase 0 原始记录（三模式 × 两变体） |
