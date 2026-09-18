@@ -36,6 +36,9 @@ public final class MenuOverlayController {
     private var hintLabel: NSTextField?
     private var rowLabels: [NSTextField] = []
     private var rowBackgrounds: [NSView] = []
+    /// Strip layout (app switcher): one icon cell per app, and the highlighted app's name below.
+    private var stripCells: [NSView] = []
+    private var stripNameLabel: NSTextField?
     private var pollTimer: Timer?
     private(set) var menu: AgentMenu?
 
@@ -54,7 +57,7 @@ public final class MenuOverlayController {
         }
         guard let panel else { return }
         rebuildContent(for: menu)
-        position(panel, rows: menu.items.count)
+        position(panel, for: menu)
 
         // `orderFrontRegardless` rather than `makeKeyAndOrderFront`: never take focus.
         panel.orderFrontRegardless()
@@ -63,6 +66,15 @@ public final class MenuOverlayController {
 
     public func render(_ menu: AgentMenu) {
         self.menu = menu
+        if menu.layout == .strip {
+            for (index, cell) in stripCells.enumerated() {
+                cell.layer?.backgroundColor = (index == menu.selection
+                    ? NSColor.controlAccentColor.withAlphaComponent(0.85)
+                    : NSColor.clear).cgColor
+            }
+            stripNameLabel?.stringValue = menu.selectedItem?.title ?? ""
+            return
+        }
         for (index, background) in rowBackgrounds.enumerated() {
             background.layer?.backgroundColor = (index == menu.selection
                 ? NSColor.controlAccentColor.withAlphaComponent(0.85)
@@ -116,6 +128,8 @@ public final class MenuOverlayController {
         content.subviews.forEach { $0.removeFromSuperview() }
         rowLabels.removeAll()
         rowBackgrounds.removeAll()
+        stripCells.removeAll()
+        stripNameLabel = nil
 
         let title = NSTextField(labelWithString: menu.title)
         title.font = .systemFont(ofSize: Self.titleFontSize, weight: .semibold)
@@ -128,6 +142,34 @@ public final class MenuOverlayController {
         hint.textColor = .tertiaryLabelColor
         content.addSubview(hint)
         hintLabel = hint
+
+        if menu.layout == .strip {
+            for item in menu.items {
+                let cell = NSView()
+                cell.wantsLayer = true
+                cell.layer?.cornerRadius = 14
+                content.addSubview(cell)
+                stripCells.append(cell)
+
+                let icon = NSImageView()
+                icon.imageScaling = .scaleProportionallyUpOrDown
+                // The icon comes from the running app itself, looked up here so Core never needs
+                // AppKit for a menu row.
+                icon.image = item.appBundleID.flatMap {
+                    NSRunningApplication.runningApplications(withBundleIdentifier: $0).first?.icon
+                } ?? NSImage(named: NSImage.applicationIconName)
+                cell.addSubview(icon)
+            }
+            let name = NSTextField(labelWithString: menu.selectedItem?.title ?? "")
+            name.font = .systemFont(ofSize: Self.rowFontSize, weight: .medium)
+            name.textColor = .labelColor
+            name.alignment = .center
+            name.lineBreakMode = .byTruncatingTail
+            content.addSubview(name)
+            stripNameLabel = name
+            render(menu)
+            return
+        }
 
         for item in menu.items {
             let background = NSView()
@@ -146,11 +188,17 @@ public final class MenuOverlayController {
         render(menu)
     }
 
-    private func position(_ panel: NSPanel, rows: Int) {
+    private func position(_ panel: NSPanel, for menu: AgentMenu) {
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        if menu.layout == .strip {
+            positionStrip(panel, cells: menu.items.count, on: screen)
+            return
+        }
+
+        let rows = menu.items.count
         let height = Self.headerHeight + CGFloat(rows) * Self.rowHeight + Self.hintHeight + Self.padding * 2
         let size = NSSize(width: Self.width, height: height)
 
-        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         // Lower-middle of the screen: close enough to read without a controller-holder having to
         // look up, and out of the way of the composer the agent itself puts at the bottom.
         let origin = NSPoint(
@@ -184,6 +232,41 @@ public final class MenuOverlayController {
         _ = content
     }
 
+    /// Horizontal strip, ⌘⇥-style: icons in a row, the highlighted app's name underneath.
+    ///
+    /// Cells shrink when there are too many apps for the screen rather than letting the panel run
+    /// off the edge; the icon inside scales with the cell.
+    private func positionStrip(_ panel: NSPanel, cells count: Int, on screen: NSRect) {
+        let available = screen.width - 40 - Self.padding * 2
+        let cell = min(Self.stripCell, available / CGFloat(max(count, 1)))
+        let width = max(Self.width, Self.padding * 2 + cell * CGFloat(count))
+        let height = Self.padding + Self.headerHeight + cell + Self.stripNameHeight + Self.hintHeight + Self.padding
+        let size = NSSize(width: width, height: height)
+
+        let origin = NSPoint(
+            x: screen.midX - size.width / 2,
+            y: screen.minY + screen.height * 0.22
+        )
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+
+        var y = size.height - Self.padding - Self.headerHeight
+        titleLabel?.frame = NSRect(x: Self.padding, y: y, width: size.width - Self.padding * 2, height: Self.headerHeight)
+        y -= cell
+
+        let stripWidth = cell * CGFloat(count)
+        var x = (size.width - stripWidth) / 2
+        let inset = cell * 0.12
+        for cellView in stripCells {
+            cellView.frame = NSRect(x: x, y: y, width: cell, height: cell).insetBy(dx: 4, dy: 4)
+            cellView.subviews.first?.frame = cellView.bounds.insetBy(dx: inset, dy: inset)
+            x += cell
+        }
+        y -= Self.stripNameHeight
+        stripNameLabel?.frame = NSRect(x: Self.padding, y: y, width: size.width - Self.padding * 2, height: Self.stripNameHeight)
+
+        hintLabel?.frame = NSRect(x: Self.padding, y: Self.padding, width: size.width - Self.padding * 2, height: Self.hintHeight)
+    }
+
     // MARK: - Focus watching
 
     private func startWatchingFrontmostApp(_ bundleID: String?) {
@@ -214,6 +297,9 @@ public final class MenuOverlayController {
     private static let rowHeight: CGFloat = 54
     private static let headerHeight: CGFloat = 30
     private static let hintHeight: CGFloat = 26
+    /// Strip layout: the square each app icon sits in, and the name line under the strip.
+    private static let stripCell: CGFloat = 88
+    private static let stripNameHeight: CGFloat = 40
     /// Deliberately large: this is meant to be readable from a sofa, not from 40 cm away.
     private static let rowFontSize: CGFloat = 26
     private static let titleFontSize: CGFloat = 15

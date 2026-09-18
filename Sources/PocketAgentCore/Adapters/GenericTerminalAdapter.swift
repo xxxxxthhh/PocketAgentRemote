@@ -23,6 +23,7 @@ public struct GenericTerminalAdapter: ToolAdapter {
         // Not keystrokes, so the "no tool chord from the generic profile" rule does not apply.
         case .focusOtherAgent: return .supported(Recipe.system(.activateAgentApp))
         case .openMenu: return .supported(Recipe.system(.openMenu, risk: .normal))
+        case .openAppSwitcher: return .supported(Recipe.system(.openAppSwitcher, risk: .normal))
         default:
             return .unsupported("tool-specific action — select a profile first")
         }

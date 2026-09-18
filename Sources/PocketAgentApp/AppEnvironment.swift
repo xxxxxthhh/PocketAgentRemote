@@ -25,6 +25,8 @@ final class AppEnvironment {
     let activator: AppActivator
     /// The on-screen menu the controller can drive.
     let overlay: MenuOverlayController
+    /// Running apps in recency order, for the app switcher (hold B).
+    let runningApps = RunningAppsTracker()
 
     private(set) var connectedDevice: String?
     private(set) var isAccessibilityGranted: Bool
@@ -132,6 +134,19 @@ final class AppEnvironment {
                 frontmostName: self.frontmostObserver.frontmostAppName()
             )
         }
+        // The app switcher lists whatever is running, regardless of profile: it is the one menu
+        // that must work from a browser or a terminal, because getting back to an agent from there
+        // is its whole point.
+        dispatcher.switcherBuilder = { [weak self] bundleID in
+            guard let self else { return nil }
+            let pair = self.configStore.config.agentPair
+            // The two agents keep the names config gives them ("Codex", not "ChatGPT"), as the
+            // command menu's header already does; everything else shows its own localized name.
+            let apps = self.runningApps.runningApps(frontmostBundleID: bundleID).map { app in
+                RunningApp(bundleID: app.bundleID, name: pair.name(for: app.bundleID) ?? app.name)
+            }
+            return AppSwitcherBuilder.menu(apps: apps, frontmostBundleID: bundleID)
+        }
         engine.onMenuChanged = { [weak self] menu in
             guard let self else { return }
             if let menu {
@@ -222,6 +237,13 @@ final class AppEnvironment {
     /// controller is not in hand.
     func showControllerMenu() {
         engine.openMenu()
+    }
+
+    /// Opens the app switcher from the menu bar — the same code path as holding B.
+    func showAppSwitcher() {
+        if !engine.openAppSwitcher() {
+            debugLog.append("MENU", "app switcher: fewer than two apps to switch between")
+        }
     }
 
     /// The profile in force right now — in auto mode this follows the frontmost application.

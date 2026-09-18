@@ -84,7 +84,7 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 | **A 轻按** | 提交 / **批准**，**按下即发** | `Enter` |
 | **A 长按** | **按住说话**（豆包语音输入，单键） | 按住右 `⌥`，松开结束 |
 | **B 轻按** | 取消 / **拒绝** | `Escape` |
-| **B 长按** | **切到另一个 agent**（Codex ⇄ Claude） | 不发按键，直接切换前台 App |
+| **B 长按** | **打开程序切换器**（手柄版 ⌘⇥，见下节） | 不发按键，弹出横向图标条 |
 | **B + ↑** | 跳到最近会话 1 | `⌥⌘1` |
 | **B + ←** | **打开手柄菜单**（见下节） | 不发按键，弹出浮层 |
 | **B + ↓** | 跳到最近会话 2 | `⌥⌘2` |
@@ -97,9 +97,8 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 > `kAXFrontmost`、合成 `⌘⇥`）**全部无效**，唯一稳定生效的是 AppleScript `activate`，
 > 因此 `Info.plist` 里必须有 `NSAppleEventsUsageDescription`（构建脚本已带上）。
 >
-> 两侧的 App 可以在配置里改：`"agentPair": { "leftBundleID": …, "rightBundleID": … }`。
-> 在任何一方按下就切到另一方；从别的 App 按则切到 `left`。
-> 菜单里的 `Focus Other Agent Now` 是不用手柄的等价入口，结果会显示在菜单和日志里。
+> 2026-09-18 之前 `B 长按` 是「Codex ⇄ Claude 二选一切换」。那条逻辑（`agentPair`）还在，
+> 入口只剩菜单栏的 `Focus Other Agent Now`；手柄上它被程序切换器取代，见下文。
 
 > **语音输入现在只需一个键：按住 A 说话。** 这是内置默认（`a.hold` 手势），不必改配置。
 > A 轻按仍然是「按下即发」的提交 —— 提交**没有延迟**：短按在按下瞬间发 `Enter`，
@@ -116,8 +115,8 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 
 > `A` / `B` 同时承担「批准 / 拒绝」，因为 Codex 和 Claude 的审批弹层用的就是 `Enter` / `Escape` ——
 > 最终确认权始终留在 agent 自己的 UI 里。**注意：拒绝请用 B 轻按**；按住 B 超过
-> `holdMs`（默认 **450 ms**）才会被当作「切换 agent」。`tapMaxMs`（220 ms）**不再**决定
-> 轻按/长按之分：按住 300 ms 仍是「取消」，不会切窗口。
+> `holdMs`（默认 **450 ms**）才会打开程序切换器。`tapMaxMs`（220 ms）**不再**决定
+> 轻按/长按之分：按住 300 ms 仍是「取消」，不会弹切换器。
 >
 > 另外两条边界：**B 一旦与方向键/A 组成 chord，这次 B 的按下就完全归 chord 所有** ——
 > 松开 B 不会再补发 `Escape`（语音输入结束不会多取消一次）；**A 已按住时再按 B 会被忽略**
@@ -157,7 +156,7 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 - **浮层永不抢焦点**（non-activating panel，实测 app 仍非 active、聊天窗口仍是前台），
   所以你的语音输入、agent 自己的快捷键都不受影响。
 - **切到别的 App 菜单自动关闭**；即使来不及关，**执行时也会校验前台 App 没变**，否则拒绝执行并记日志。
-- **常用直达继续保留**：`B+A` 语音、`B+→` 待处理会话、B 长按切 App、`B+↑/↓` 会话跳转，都不必绕菜单。
+- **常用直达继续保留**：`B+A` 语音、`B+→` 待处理会话、B 长按切程序、`B+↑/↓` 会话跳转，都不必绕菜单。
 - 不想用手柄时：**菜单栏 → `Show Controller Menu`** 是同一入口。
 
 > **`B+←` 之前是「新建会话」**（后来在 Claude 侧被改绑 `⌘N`）。它现在统一为「打开菜单」，
@@ -170,6 +169,36 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 |---|---|
 | Codex | 新建会话 / 查看变更 / 打开终端 / 切换模型 / 归档会话 |
 | Claude | 新建对话（`⌘N`，实测菜单确认） |
+
+---
+
+## 程序切换器（`B 长按`）
+
+手柄版 ⌘⇥：**按住 B 约半秒再松开**，屏幕下方弹出一排图标，是所有运行中的普通程序
+（Dock 里那种；菜单栏小工具不列），按最近使用顺序从左到右排。
+
+```text
+┌──────────────────────────────────────────┐
+│  切换程序                                │
+│                                          │
+│   [Codex]  [▮Claude▮]  [Chrome]  [Finder]│
+│                Claude                    │
+│                                          │
+│  ←→ 选择   A 切换   B 关闭               │
+└──────────────────────────────────────────┘
+```
+
+- **松开 B 后浮层保持**，←→ 移动高亮，A 切到高亮的程序，B 关闭。打开期间 ↑↓ 被吞掉，
+  什么都不会传给背后的窗口。
+- **默认高亮第二个 = 上一个程序**，所以「长按 B 松开、按 A」就是切回上一个程序，
+  和 ⌘⇥ 轻点一下相同。原来的 Codex ⇄ Claude 来回切成了它的特例。
+- **在任何 App 下都能打开**（浏览器、终端都行），这是它和 `B+←` 命令菜单的区别 ——
+  命令菜单只在 agent 前台时才有内容。
+- 切换用的是同一条 AppleScript `activate` 路径（按 bundle ID 寻址），日志里是 `FOCUS` 行。
+- 只有一个普通程序在跑时不弹出，日志记 `SKIP openAppSwitcher`。
+- 顺序只对 App 启动后用过的程序准确：macOS 不提供全局的最近使用顺序，App 自己监听
+  激活通知来维护；启动前就开着、之后没碰过的程序排在后面。
+- 不想用手柄时：**菜单栏 → `Show App Switcher`** 是同一入口。
 
 > Claude 侧暂时只有一项，是有原因的：其余命令要么键位未验证，要么在**普通 chat 语境下被
 > Claude 自己灰显**（`View > Show Terminal`、`View > Show Changes` 都是 `[OFF]`，它们属于
@@ -206,7 +235,8 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 }
 ```
 
-**`agentPair` 决定 `B 长按` 在两个 App 之间怎么切**：`left`/`right` 不是左右手方向，
+**`agentPair` 决定菜单栏 `Focus Other Agent Now` 在两个 App 之间怎么切**（`B 长按` 已改为
+程序切换器，不再读它）：`left`/`right` 不是左右手方向，
 而是「两个槽位」——从任一方按下都切到另一方，从别的 App 按下则切到 `left`。
 留空一侧（`""`）就是单 agent 模式；写 `null` 则回落到内置默认值。
 `leftName`/`rightName` 只是显示用的名字，可省略。
@@ -234,12 +264,12 @@ key 是语义动作名，value 是按键。用来补齐 Codex **没有默认键�
 
 ```text
 基础层      up · down · left · right · a
-B 手势      b.tap（取消）· b.hold（切到另一个 agent）
+B 手势      b.tap（取消）· b.hold（程序切换器）
 chord       b.up · b.down · b.left · b.right · b.a
 ```
 
 > `b.tap` 与 `b.hold` 是两个独立的手势，可以分别指向不同东西 —— 现在默认就是分开的。
-> 把 `b.hold` 写进 `gestureKeyOverrides` 可以覆盖掉「切换 agent」，改回发某个按键。
+> 把 `b.hold` 写进 `gestureKeyOverrides` 可以覆盖掉「程序切换器」，改回发某个按键。
 
 按键名：`a`-`z`、`0`-`9`、`upArrow`/`downArrow`/`leftArrow`/`rightArrow`、
 `enter`/`escape`/`tab`/`space`、`minus`/`equal`/`comma`/`period`/`slash`/`grave` 等；
@@ -286,14 +316,15 @@ chord       b.up · b.down · b.left · b.right · b.a
 | Phase 1 控制器核心 | ✅ 73 个单测 + 真机验证（两条输入路径均通过） |
 | Phase 2 菜单栏 App | ✅ 可用（见 `docs/pending-user-tests.md` 待你验收） |
 | Phase 3 适配层 | ✅ Codex / Claude / Generic 三套；Codex 侧 8/11 动作有默认键位 |
-| 跨 App 切换（`B 长按`） | ✅ 代码与打包验证通过；**手柄真机验收待你** |
+| 跨 App 切换（`Focus Other Agent Now`） | ✅ 已验收；手柄入口已让位给程序切换器 |
 | 手柄菜单（`B+←`） | ✅ 单测 + 真实窗口冒烟 + 手柄实机验收全部通过 |
+| 程序切换器（`B 长按`） | ✅ 单测通过；**真实窗口与手柄真机验收待你**（`docs/pending-user-tests.md` §L） |
 
 ### 已知限制
 
 - **Codex 没有权限模式循环动作**，`B+↑` 已改绑 `新建会话`。切权限模式请用 Codex 自己的 UI。
 - **Claude 侧的动作映射未做深度验证**（调研深度不及 Codex），`queueFollowUp` 在 Claude 上不可用。
-- **`B 长按` 现在是切 App，不再是「拒绝」**：审批时拒绝请用 B 轻按。这是刻意的取舍。
+- **`B 长按` 现在是程序切换器，不再是「拒绝」**：审批时拒绝请用 B 轻按。这是刻意的取舍。
 - **跨 App 切换依赖 AppleScript**：进程内的 `activate()` / AX / 合成 `⌘⇥` 在本机实测全部无效，
   所以 `Info.plist` 里的 `NSAppleEventsUsageDescription` 是必需的。若将来系统改规则，
   日志会打印实际生效的方法（`via appleScript`）以及全部失败原因。

@@ -22,6 +22,9 @@ public final class ActionDispatcher: ActionDispatching {
     public var onMenuChanged: ((AgentMenu?) -> Void)?
     /// Builds the menu for a bundle ID. Injected by the app so Core stays free of AppKit.
     public var menuBuilder: ((String?) -> AgentMenu?)?
+    /// Builds the app-switcher strip for the current frontmost app. Injected for the same reason:
+    /// only the app layer can list running applications.
+    public var switcherBuilder: ((String?) -> AgentMenu?)?
 
     /// A cross-app focus ran (successfully or not), with a human-readable outcome.
     ///
@@ -95,21 +98,26 @@ public final class ActionDispatcher: ActionDispatching {
         guard var session = menuSession else { return .ignored }
         guard event.isPress else { return .handled }   // releases are ours, not the app's
 
-        switch event.button {
-        case .up:
+        // Which axis navigates depends on the layout: ↑↓ for the list, ←→ for the strip. The other
+        // axis is swallowed, never passed on — while a menu is up the controller is the menu's.
+        switch (event.button, session.menu.layout) {
+        case (.up, .list):
             session.menu.moveUp()
-        case .down:
+        case (.down, .list):
             session.menu.moveDown()
-        case .a:
+        case (.left, .strip):
+            session.menu.moveSelection(by: -1)
+        case (.right, .strip):
+            session.menu.moveSelection(by: 1)
+        case (.a, _):
             menuSession = session
             return executeSelectedMenuItem(config: configProvider())
-        case .b:
+        case (.b, _):
             menuSession = nil
             onMenuChanged?(nil)
             onDiagnostic?("MENU  closed by B")
             return .dismissed
         default:
-            // ←/→ have no meaning inside the menu; swallow them rather than let them fall through.
             menuSession = session
             return .handled
         }
@@ -136,28 +144,57 @@ public final class ActionDispatcher: ActionDispatching {
             menuSession = nil
             onMenuChanged?(nil)
             let reason = "frontmost app changed (\(session.bundleID ?? "unknown") → \(currentBundleID ?? "unknown")); menu item refused"
-            onDiagnostic?("DENY  \(item.action.rawValue): \(reason)")
+            onDiagnostic?("DENY  \(item.action?.rawValue ?? item.title): \(reason)")
             return .refused(reason)
         }
 
         menuSession = nil
         onMenuChanged?(nil)
 
+        switch item.choice {
+        case .activateApp(let bundleID):
+            return activateApp(bundleID, title: item.title, currentBundleID: currentBundleID)
+        case .run(let action):
+            return run(action, title: item.title, currentBundleID: currentBundleID, config: config)
+        }
+    }
+
+    /// An app-switcher row: raise the app, send it nothing. Same path and same reporting as
+    /// `focusOtherAgent`, so the debug log shows which activation method worked (or why none did).
+    private func activateApp(_ bundleID: String, title: String, currentBundleID: String?) -> MenuEventResult {
+        guard bundleID != currentBundleID else {
+            // The highlight was left on the app already in front: nothing to do, and no reason to
+            // spend an AppleScript round trip proving it.
+            onDiagnostic?("MENU  \(title) is already in front; nothing to switch")
+            return .activated(bundleID: bundleID)
+        }
+        guard let activator else {
+            onDiagnostic?("SKIP  switch to \(bundleID): app activation is not wired up in this build")
+            return .activated(bundleID: bundleID)
+        }
+        onDiagnostic?("MENU  switching to \(bundleID) (\(title))")
+        let outcome = activator.activate(bundleID: bundleID)
+        onActivation?(.openAppSwitcher, outcome)
+        return .activated(bundleID: bundleID)
+    }
+
+    /// A command-menu row: through the normal pipeline, so the adapter and guard still apply.
+    private func run(_ action: AgentAction, title: String, currentBundleID: String?, config: AppConfig) -> MenuEventResult {
         // Log the exact keys about to be injected alongside the row that was chosen. Two of Claude's
         // rows are context-dependent (its own menu shows them greyed out in a plain chat), so "the
         // menu item did nothing" is normally Claude declining the keystroke — and without the key in
         // the log there is no way to tell that apart from us failing to send anything.
         let stroke = AdapterCatalog.adapter(for: config.resolvedProfile(frontmostBundleID: currentBundleID),
                                             overrides: config.overrides)
-            .support(for: item.action).recipe?.primaryStroke
-        onDiagnostic?("MENU  running \(item.action.rawValue) (\(item.title)) → \(stroke?.description ?? "no keystroke")")
+            .support(for: action).recipe?.primaryStroke
+        onDiagnostic?("MENU  running \(action.rawValue) (\(title)) → \(stroke?.description ?? "no keystroke")")
 
         // Run it with the menu out of the way, but through the normal pipeline so the guard still
         // applies. `isExecutingMenuItem` stops a row from opening the menu again.
         isExecutingMenuItem = true
-        dispatch(.press(item.action))
+        dispatch(.press(action))
         isExecutingMenuItem = false
-        return .executed(item.action)
+        return .executed(action)
     }
 
     public func releaseHeldStrokes() {
@@ -179,6 +216,23 @@ public final class ActionDispatcher: ActionDispatching {
         menuSession = MenuSession(menu: menu, bundleID: frontmostBundleID)
         onMenuChanged?(menu)
         onDiagnostic?("MENU  opened for \(frontmostBundleID ?? "?") with \(menu.items.count) items")
+        return true
+    }
+
+    /// Opens the app switcher. Returns false when there are not enough apps to switch between.
+    ///
+    /// Shares the menu session with the command menu: while either is up the controller belongs to
+    /// it, and only one can be up at a time.
+    @discardableResult
+    public func openAppSwitcher(frontmostBundleID: String?) -> Bool {
+        guard menuSession == nil else {
+            onDiagnostic?("MENU  app switcher ignored: a menu is already open")
+            return true
+        }
+        guard let menu = switcherBuilder?(frontmostBundleID) else { return false }
+        menuSession = MenuSession(menu: menu, bundleID: frontmostBundleID)
+        onMenuChanged?(menu)
+        onDiagnostic?("MENU  app switcher opened with \(menu.items.count) apps")
         return true
     }
 
@@ -316,6 +370,17 @@ public final class ActionDispatcher: ActionDispatching {
             guard !isExecutingMenuItem else { return }
             guard openMenu(frontmostBundleID: frontmostBundleID) else {
                 onDiagnostic?("SKIP  openMenu: no agent in front (or no commands available for it)")
+                return
+            }
+            return
+        }
+
+        // The app switcher is global too, and unlike the command menu it does not care what is in
+        // front: it lists whatever is running and lets the user pick.
+        if action.recipeEffect == .openAppSwitcher {
+            guard !isExecutingMenuItem else { return }
+            guard openAppSwitcher(frontmostBundleID: frontmostBundleID) else {
+                onDiagnostic?("SKIP  openAppSwitcher: fewer than two apps to switch between")
                 return
             }
             return

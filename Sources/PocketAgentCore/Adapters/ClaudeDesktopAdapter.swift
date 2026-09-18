@@ -88,6 +88,7 @@ public struct ClaudeDesktopAdapter: ToolAdapter {
         // Cross-app: sends nothing to Claude, so it works on every profile (see CodexDesktopAdapter).
         case .focusOtherAgent: return .supported(Recipe.system(.activateAgentApp))
         case .openMenu: return .supported(Recipe.system(.openMenu, risk: .normal))
+        case .openAppSwitcher: return .supported(Recipe.system(.openAppSwitcher, risk: .normal))
 
         case .archiveChat, .pinThread, .forkThread, .openSideChat,
              .goToRecentChat1, .goToRecentChat2, .goToRecentChat3,

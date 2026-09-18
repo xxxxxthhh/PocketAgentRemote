@@ -9,7 +9,7 @@ final class EventResolverTests: XCTestCase {
         // cross-app switch. Both gestures come from the same button, so this is the test that
         // pins down which one does what.
         XCTAssertEqual(resolver.triggers(for: .gesture(.tap(.b))), [.press(.cancelOrInterrupt)])
-        XCTAssertEqual(resolver.triggers(for: .gesture(.hold(.b))), [.press(.focusOtherAgent)])
+        XCTAssertEqual(resolver.triggers(for: .gesture(.hold(.b))), [.press(.openAppSwitcher)])
     }
 
     func testBHoldFallsBackToTheBaseBindingWhenUnset() {

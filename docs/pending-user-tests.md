@@ -118,7 +118,10 @@ Codex 有 3 个动作**没有默认快捷键**，需要一次性配置：
 
 ---
 
-## I. 切到另一个 agent（`B 长按`）—— 待你按手柄 ✅/❌
+## I. 切到另一个 agent（原 `B 长按`）—— 手柄入口已被 §L 取代（2026-09-18）
+
+> 下表中「按住 B」的几项已过时：`B 长按` 现在打开程序切换器（§L）。第 1 项（菜单栏
+> `Focus Other Agent Now`）与第 5/5b/5c/6/7 项（轻按仍是取消、chord/断连不误触）仍然有效。
 
 代码、单测、打包、以及「用真实 `AppActivator` 切换真实 App」都已经验过
 （浏览器 → Codex → Claude → Codex → Claude 四次全通过），**只有「按住手柄 B」这一下需要你来按**。
@@ -245,6 +248,48 @@ MENU  closed by B
 2. **修饰键分左右。** 一开始模型里只有左 Option（keyCode 58），表达不出右 Option（61），
    所以怎么调都不可能成功 —— 时序、间隔都是次要的。现在 `rightOption` / `rightShift` /
    `rightControl` / `rightCommand` 都已支持。
+
+---
+
+## L. 程序切换器（`B 长按`）—— 待你验 ✅/❌（2026-09-18）
+
+代码与 206 个单测已过；**真实窗口（浮层绘制、不抢焦点）与手柄实机都还没验**。
+重建启动 App 后：
+
+```bash
+POCKETAGENT_SWIFTPM_FLAGS=--disable-sandbox ./scripts/make-agent-app.sh release
+open build/PocketAgentRemote.app
+```
+
+准备：至少开着 Codex、Claude、一个浏览器。
+
+| # | 操作 | 期望 | 结果 |
+|---|---|---|---|
+| 1 | 菜单栏 → `Show App Switcher` | 屏幕下方出现一排程序图标，高亮在**第二个**，下方显示它的名字；前台 App 不变 | |
+| 2 | 焦点在 Codex，**按住 B 约 1 秒后松开** | 浮层弹出并**保持**；高亮在上一个用过的程序 | |
+| 3 | 按 → 两三下、按 ← 一下 | 高亮左右移动，两端环绕；背后窗口**没有**收到方向键 | |
+| 4 | 按 ↑ / ↓ | 什么都不发生（不动高亮，也不传给窗口） | |
+| 5 | 按 A | 浮层消失，高亮的程序到前台；日志有一行 `FOCUS openAppSwitcher: focused … via appleScript` | |
+| 6 | 再长按 B、直接按 A | 切回刚才的程序（「长按 B、A」= 切回上一个） | |
+| 7 | 长按 B，然后按 B | 浮层关闭，什么都不切，**没有** `Escape` 发给窗口 | |
+| 8 | 焦点在浏览器里长按 B | 一样能弹出（切换器不依赖 profile） | |
+| 9 | 浮层开着时用鼠标点别的窗口 | 浮层自动消失（0.15 s 内） | |
+| 10 | 长按 B 期间按 ↑（B+↑ chord） | 走会话跳转，松开 B **不**弹切换器 | |
+| 11 | 轻按 B（<450 ms） | 仍是 `Escape`，不弹切换器 | |
+
+日志重点：
+
+```text
+GESTURE  hold(b)
+OUTPUT   MENU  app switcher opened with 4 apps
+OUTPUT   MENU  switching to com.anthropic.claudefordesktop (Claude)
+FOCUS    openAppSwitcher: focused com.anthropic.claudefordesktop via appleScript in 80 ms
+```
+
+- 没有 `hold(b)` = 按得不够久（450 ms）。
+- 有 `SKIP  openAppSwitcher` = 系统只看到一个普通程序（检查是不是只开了一个 Dock 程序）。
+- `FOCUS … failed` = AppleScript 被拒，行尾列出原因；去 **系统设置 → 隐私与安全性 → 自动化** 看 PocketAgentRemote。
+- 图标顺序不像 ⌘⇥：只有 App 启动后用过的程序按最近顺序排，之前就开着没碰过的排后面，这是已知限制。
 
 ---
 

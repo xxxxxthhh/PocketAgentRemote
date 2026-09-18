@@ -1,16 +1,43 @@
 import Foundation
 
+/// What choosing a menu row does.
+///
+/// Two kinds, because the two menus do different things: the command menu runs a semantic action
+/// through the normal adapter/guard pipeline, while the app switcher raises an application and
+/// sends it nothing. Keeping them as one enum lets the dispatcher own a single "menu session" for
+/// both, so the engine's "a menu is up, it owns the controller" rule has one state to read.
+public enum MenuChoice: Equatable, Sendable {
+    case run(AgentAction)
+    case activateApp(bundleID: String)
+}
+
 /// One row of the on-screen menu.
 public struct MenuItem: Equatable, Sendable {
-    /// The action to run when this row is chosen.
-    public var action: AgentAction
+    public var choice: MenuChoice
     /// What the row says. Kept separate from the action name so the menu reads like a user manual
     /// rather than a list of identifiers.
     public var title: String
 
-    public init(action: AgentAction, title: String) {
-        self.action = action
+    public init(choice: MenuChoice, title: String) {
+        self.choice = choice
         self.title = title
+    }
+
+    /// A command-menu row.
+    public init(action: AgentAction, title: String) {
+        self.init(choice: .run(action), title: title)
+    }
+
+    /// The action this row runs; nil for an app-switcher row.
+    public var action: AgentAction? {
+        if case .run(let action) = choice { return action }
+        return nil
+    }
+
+    /// The app this row activates; nil for a command row.
+    public var appBundleID: String? {
+        if case .activateApp(let bundleID) = choice { return bundleID }
+        return nil
     }
 }
 
@@ -30,16 +57,28 @@ public struct MenuItem: Equatable, Sendable {
 /// the app cannot run would be worse than no menu: the user would press A and nothing would happen,
 /// with no explanation on screen.
 public struct AgentMenu {
+    /// How the rows are arranged, which also decides which buttons move the selection.
+    ///
+    /// The command menu is a vertical list driven by ↑↓; the app switcher is a horizontal strip of
+    /// icons driven by ←→, like ⌘⇥. The other axis is swallowed in each case, so the two menus feel
+    /// different in the hand as well as on screen.
+    public enum Layout: Equatable, Sendable {
+        case list
+        case strip
+    }
+
     /// The app the menu was opened for. Held so a choice can be refused when focus has moved on.
     public let bundleID: String?
     /// Display name for the header — "Codex", "Claude", or the app's own name.
     public let title: String
+    public let layout: Layout
     public private(set) var items: [MenuItem]
     public private(set) var selection: Int
 
-    public init(bundleID: String?, title: String, items: [MenuItem], selection: Int = 0) {
+    public init(bundleID: String?, title: String, items: [MenuItem], selection: Int = 0, layout: Layout = .list) {
         self.bundleID = bundleID
         self.title = title
+        self.layout = layout
         self.items = items
         self.selection = items.isEmpty ? 0 : min(max(selection, 0), items.count - 1)
     }
@@ -53,7 +92,12 @@ public struct AgentMenu {
     public var isEmpty: Bool { items.isEmpty }
 
     /// The hint line along the bottom, so the controls never have to be remembered.
-    public var hint: String { "↑↓ 选择    A 执行    B 关闭" }
+    public var hint: String {
+        switch layout {
+        case .list: return "↑↓ 选择    A 执行    B 关闭"
+        case .strip: return "←→ 选择    A 切换    B 关闭"
+        }
+    }
 
     // MARK: - Navigation
 
@@ -111,6 +155,34 @@ public enum AgentMenuBuilder {
     }
 }
 
+/// A running application, as the app switcher sees it. Plain data so Core needs no AppKit.
+public struct RunningApp: Equatable, Sendable {
+    public var bundleID: String
+    public var name: String
+
+    public init(bundleID: String, name: String) {
+        self.bundleID = bundleID
+        self.name = name
+    }
+}
+
+/// Builds the app-switcher strip.
+public enum AppSwitcherBuilder {
+    /// The strip for `apps`, which must be in most-recently-used order with the frontmost app first.
+    ///
+    /// The highlight starts on the **second** app — the one used before this — so "hold B, press A"
+    /// is a one-gesture jump back, exactly like a quick ⌘⇥. That is what keeps the old two-agent
+    /// toggle working as a special case of the switcher.
+    ///
+    /// Nil with fewer than two apps: a strip with one icon offers nowhere to go, and showing it
+    /// would only make the user wonder why → does nothing. The dispatcher reports the skip.
+    public static func menu(apps: [RunningApp], frontmostBundleID: String?) -> AgentMenu? {
+        guard apps.count >= 2 else { return nil }
+        let rows = apps.map { MenuItem(choice: .activateApp(bundleID: $0.bundleID), title: $0.name) }
+        return AgentMenu(bundleID: frontmostBundleID, title: "切换程序", items: rows, selection: 1, layout: .strip)
+    }
+}
+
 /// What happened to a controller event handed to the menu.
 ///
 /// Returned rather than inferred so the engine and the app can react (redraw, log, dismiss) without
@@ -121,6 +193,8 @@ public enum MenuEventResult: Equatable, Sendable {
     /// The menu took the event (selection moved, or a key it owns was swallowed).
     case handled
     case executed(AgentAction)
+    /// An app-switcher row was chosen; the activation itself is reported through `onActivation`.
+    case activated(bundleID: String)
     case dismissed
     /// Refused for a reason worth telling the user, e.g. focus moved.
     case refused(String)

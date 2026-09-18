@@ -22,7 +22,7 @@ final class AgentMenuTests: XCTestCase {
         XCTAssertEqual(menu?.items.first?.action, .newChat, "新建会话 is the first row")
         XCTAssertEqual(menu?.title, "Codex")
 
-        let actions = menu?.items.map(\.action) ?? []
+        let actions = menu?.items.compactMap(\.action) ?? []
         XCTAssertTrue(actions.contains(.inspectChanges))
         XCTAssertTrue(actions.contains(.openTerminal))
         // Everything offered must be runnable, or pressing A on it would do nothing at all.
@@ -39,8 +39,8 @@ final class AgentMenuTests: XCTestCase {
         XCTAssertEqual(claudeMenu?.title, "Claude")
         XCTAssertEqual(claudeMenu?.items.first?.action, .newChat)
         let claudeAdapter = AdapterCatalog.adapter(for: .claudeCode)
-        for item in claudeMenu?.items ?? [] {
-            XCTAssertNotNil(claudeAdapter.support(for: item.action).recipe)
+        for action in claudeMenu?.items.compactMap(\.action) ?? [] {
+            XCTAssertNotNil(claudeAdapter.support(for: action).recipe)
         }
     }
 

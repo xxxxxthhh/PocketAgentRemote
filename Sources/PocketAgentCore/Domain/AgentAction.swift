@@ -79,6 +79,16 @@ public enum AgentAction: String, Codable, CaseIterable, Sendable {
     // that would need a new chord moves into a list the user can see. Like `focusOtherAgent` it
     // carries no keystroke of its own — pressing it draws an overlay and nothing else.
     case openMenu
+
+    // MARK: App switcher
+    //
+    // Opens the controller's own ⌘⇥: a strip of every running app, ←/→ to pick, A to switch. It
+    // replaced `focusOtherAgent` as the default for holding B (2026-09-18): the two-app toggle was a
+    // special case of "put some other app in front", and a visible strip lets the user reach any app
+    // — a browser, a terminal — not just the pair named in config. The system switcher itself is not
+    // an option: a synthesised ⌘⇥ is ineffective on this machine (see `AppActivator`), and it needs
+    // ⌘ held for as long as it is open, whereas this strip stays up after B is released.
+    case openAppSwitcher
 }
 
 /// How risky an action is to fire (spec §10.5). Drives the guard rules in spec §12/§17.
@@ -128,6 +138,8 @@ public enum RecipeEffect: Equatable, Sendable {
     case activateAgentApp
     /// Draw the on-screen menu for the app in front. No keystroke is emitted.
     case openMenu
+    /// Draw the strip of running apps. No keystroke is emitted; choosing a row activates an app.
+    case openAppSwitcher
 }
 
 /// A complete, pre-validated recipe for one semantic action (spec §10.5, extended with the
@@ -175,6 +187,7 @@ public extension AgentAction {
         switch self {
         case .focusOtherAgent: return .activateAgentApp
         case .openMenu: return .openMenu
+        case .openAppSwitcher: return .openAppSwitcher
         default: return .keystroke
         }
     }
@@ -192,7 +205,7 @@ public extension AgentAction {
             return .sensitive
         case .focusOtherAgent: return .sensitive
         // Opening a menu touches no application: it only draws our own overlay.
-        case .openMenu: return .normal
+        case .openMenu, .openAppSwitcher: return .normal
         }
     }
 }

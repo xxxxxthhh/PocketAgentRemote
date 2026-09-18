@@ -40,6 +40,11 @@ public struct GestureBindings: Equatable, Sendable {
     /// is full, so the way to add more commands is not more chords but a visible list. `newChat`
     /// moved from this slot to the menu's first row, which costs one extra press and buys room for
     /// every command that would otherwise need its own gesture.
+    ///
+    /// `b.hold` changed again on 2026-09-18, from the two-app toggle to the **app switcher**: the
+    /// same strip-of-icons idea as ⌘⇥, driven by ←/→ and confirmed with A. The highlight starts on
+    /// the previous app, so "hold B, A" is still a one-gesture jump back — the old toggle survives
+    /// as a special case — while any other running app is a few presses of → away.
     public static let `default` = GestureBindings(
         base: [
             .up: .navigateUp,
@@ -56,7 +61,7 @@ public struct GestureBindings: Equatable, Sendable {
             .right: .nextChatNeedingAttention, // ⌥⌘A — whichever agent wants you
             .a: .inspectChanges,               // ⌥⌘B — review the diff
         ],
-        bHold: .focusOtherAgent
+        bHold: .openAppSwitcher
     )
 }
 

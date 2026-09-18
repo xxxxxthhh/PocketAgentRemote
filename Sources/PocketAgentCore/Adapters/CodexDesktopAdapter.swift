@@ -84,6 +84,7 @@ public struct CodexDesktopAdapter: ToolAdapter {
         // user's "switch agent" button did nothing.
         case .focusOtherAgent: return .supported(Recipe.system(.activateAgentApp))
         case .openMenu: return .supported(Recipe.system(.openMenu, risk: .normal))
+        case .openAppSwitcher: return .supported(Recipe.system(.openAppSwitcher, risk: .normal))
 
         case .openPermissionModeMenu:
             return .unsupported("Codex desktop has no permission-mode action (only approve/decline)")

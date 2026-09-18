@@ -83,8 +83,8 @@ func previewStroke(for action: AgentAction) -> KeyStroke? {
         // one-time user key binding, and the rest would need gestures we do not have.
         return nil
 
-    case .focusOtherAgent, .openMenu:
-        // Not keystrokes at all — one raises the other agent's window, the other draws the menu.
+    case .focusOtherAgent, .openMenu, .openAppSwitcher:
+        // Not keystrokes at all — one raises the other agent's window, the others draw an overlay.
         // Shown as nil here because this tool only previews keys.
         return nil
     }
@@ -108,6 +108,7 @@ final class SmokeDispatcher: ActionDispatching {
     var openMenu: AgentMenu? { nil }
     var onMenuChanged: ((AgentMenu?) -> Void)?
     @discardableResult func openMenu(frontmostBundleID: String?) -> Bool { false }
+    @discardableResult func openAppSwitcher(frontmostBundleID: String?) -> Bool { false }
     func closeMenu() {}
     func handleMenuEvent(_ event: InputEvent) -> MenuEventResult { .ignored }
 

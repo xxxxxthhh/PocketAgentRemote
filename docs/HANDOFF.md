@@ -2,6 +2,7 @@
 
 > 生成于 2026-09-16 · 27 个 commit · 5413 行 Swift · 111 个单测全绿
 > **2026-09-16 更新**：新增「切到另一个 agent」（`B 长按`）· 审查后修复 6 项 · 新增手柄菜单 · 171 个单测全绿
+> **2026-09-18 更新**：`B 长按` 改为**程序切换器**（横向图标条，←→ 选 / A 切 / B 关，见 §3.7）· 206 个单测全绿
 > **给新会话读的第一份文档。** 它记录的是「现在真实是什么状态」，
 > 而 `docs/spec-v0.3.md` 记录的是「设计意图」—— 两者已经有偏离，差异在 §6 列明。
 
@@ -69,7 +70,7 @@ swift test                              # 111 个测试
 | **A 轻按** | `Enter`（提交 / **批准**，按下即发） | 同左 | 同左 |
 | **A 长按** | **按住说话**（单键语音输入，内置默认） | 同左 | 同左 |
 | **B 轻按** | `Escape`（取消 / **拒绝**） | 同左 | 同左 |
-| **B 长按** | **切到另一个 agent**（全局，不受 profile/白名单影响） | 同左 | 同左 |
+| **B 长按** | **程序切换器**（全局，不受 profile/白名单影响，见 §3.7） | 同左 | 同左 |
 | **B + ↑** | `⌥⌘1` 跳到最近会话 1 | `⌘⇧]` 下一个会话 | **不发** |
 | **B + ↓** | `⌥⌘2` 跳到最近会话 2 | `⌘⇧[` 上一个会话 | **不发** |
 | **B + ←** | `⌘N` 新建会话 | `⌘N` 新建对话 | **不发** |
@@ -78,9 +79,13 @@ swift test                              # 111 个测试
 
 > `A` / `B` 兼作批准 / 拒绝，因为 Codex 与 Claude 的审批弹层就是 `Enter` / `Escape` ——
 > 最终确认权留在 agent 自己的 UI 里。**没有**独立的 approve/reject 动作，是刻意的（见 §6）。
-> **注意**：`B 长按` 已改作切 App，审批时拒绝必须用 B **轻按**。
+> **注意**：`B 长按` 已改作程序切换器，审批时拒绝必须用 B **轻按**。
 
-### 3.3 切到另一个 agent（`B 长按`，2026-09-16 新增）
+### 3.3 切到另一个 agent（2026-09-16 新增；2026-09-18 起手柄入口让位给 §3.7）
+
+> **2026-09-18**：`B 长按` 不再触发它。`focusOtherAgent` / `agentPair` / `AppActivator` 都还在，
+> 入口只剩菜单栏 `Focus Other Agent Now`；程序切换器复用同一个 `AppActivator`。
+> 配置里没有「手势绑到语义动作」的机制，所以用户也无法把 `b.hold` 绑回它。
 
 一条手势在两个 agent 之间来回切，目标是「把手从键盘上解放出来」：在浏览器里也能一键回到
 Codex / Claude。
@@ -160,6 +165,32 @@ Codex / Claude。
 
 ---
 
+### 3.7 程序切换器（`B 长按`，2026-09-18 新增）
+
+手柄版 ⌘⇥。用户的原话：「长按 B 后，程序切换界面一直保持，然后可以通过左右来选择，通过 A 来确认。」
+
+- **为什么不合成真实 ⌘⇥**：本机实测合成 `⌘⇥` 无效（§3.3），而且系统切换器要求 ⌘ 一直按住，
+  与「松开 B 后界面保持」矛盾。
+- **复用菜单会话，不是新子系统。** `ActionDispatcher.menuSession` 同时承载命令菜单和切换器；
+  `AgentMenu.layout`（`.list` / `.strip`）决定哪个轴移动高亮（↑↓ vs ←→），另一轴被吞掉。
+  `MenuItem.choice` 是 `.run(AgentAction)` 或 `.activateApp(bundleID:)`；后者直接走
+  `AppActivator`，通过 `onActivation` 汇报，不进 adapter/guard。引擎的「菜单开着就接管手柄」
+  与开合复位识别器的逻辑一行没改。
+- **在 B 松开时打开，不是计时器触发时。** 计时器触发时弹出会打断「B 按久一点再按方向键」的
+  慢 chord（菜单一开就接管手柄）。识别器完全没动。
+- **初始高亮第二个（上一个程序）**：「长按 B、A」= 切回上一个，原来的两 agent 来回切是特例。
+- **少于两个普通程序不弹**，`SKIP openAppSwitcher`。
+- **列表在 App 层**（`RunningAppsTracker`）：`NSWorkspace.runningApplications` 过滤
+  `activationPolicy == .regular`（本 App 是 accessory，自动排除）。macOS 不提供 MRU 顺序，
+  所以从启动起监听 `didActivateApplicationNotification` 自己维护，未见过的按系统顺序排后面，
+  已退出的在下次列举时剔除。图标由浮层按 bundle ID 取 `NSRunningApplication.icon`，Core 不碰 AppKit。
+- **`AppActivator` 改为按 bundle ID 寻址**（`tell application id "…"`）：切换器让任意程序成为目标，
+  按 localizedName 会撞名/本地化。实测 `tell application id "com.openai.codex" to get name` → ChatGPT。
+- **`bHold` 默认值是代码常量，不是存盘配置**，所以不需要像 `b.left` 那样做迁移。
+- 菜单栏 `Show App Switcher` 是等价入口；日志 `MENU  app switcher opened with N apps` / `FOCUS`。
+- 单测：`Tests/PocketAgentCoreTests/AppSwitcherTests.swift`（builder、dispatcher、端到端长按）。
+  **真实窗口冒烟与手柄实机验收尚未做**，见 `docs/pending-user-tests.md` §L。
+
 ## 4. 配置
 
 `~/Library/Application Support/PocketAgentRemote/config.json`（菜单 → `Open Config File` / `Reload Config`）
@@ -224,7 +255,8 @@ Sources/PocketAgentCore/          全部逻辑，无 UI 依赖，可单测
 ├── Actions/                      GestureBindings(含 bHold) / GestureID / GestureOverride / EventResolver
 ├── Adapters/                     ToolAdapter 协议 + Codex / Claude / Generic 三套
 ├── Guard/                        ActionGuard（显式 profile / macro / 白名单）
-├── Focus/                        AppActivator（切前台 App）+ AgentPairResolver（切哪个）
+├── Focus/                        AppActivator（切前台 App，按 bundle ID 寻址）+ AgentPairResolver（切哪个）
+├── Menu/                         AgentMenu（list/strip 两种布局）· MenuItem.choice · AgentMenuBuilder · AppSwitcherBuilder
 ├── Config/                       AppConfig（容错解码，含 agentPair）+ ConfigStore
 ├── Dispatch/                     ActionDispatcher（trigger → adapter/系统效果 → guard → emitter）
 ├── Output/                       KeyStroke · CGEventEmitter（串行队列 + 真修饰键事件）
@@ -232,6 +264,7 @@ Sources/PocketAgentCore/          全部逻辑，无 UI 依赖，可单测
 └── Engine/                       ControllerEngine（把上面串起来）
 
 Sources/PocketAgentApp/           菜单栏 App（薄壳）：AppEnvironment / MenuBarController / DebugMonitor
+                                  MenuOverlayController（浮层，纵向列表 + 横向图标条）/ RunningAppsTracker（MRU 程序列表）
 Sources/AgentProbe/               Phase 0 探针
 Sources/AgentCoreSmoke/           Phase 1 真机验证工具（log-only）
 Tools/dump-menu-accelerators.swift 用 AX API 导出运行中 App 的真实菜单快捷键
@@ -260,6 +293,7 @@ Tools/dump-menu-accelerators.swift 用 AX API 导出运行中 App 的真实菜�
 | 6 | 手势绑定全局 | 支持按 profile 区分 | 两个 App 的快捷键几乎零重叠 |
 | 7 | — | `chordReleased` 事件 | 按住式修饰键绑定需要知道何时结束 |
 | 8 | — | **`b.hold` 从「拒绝」改为「切到另一个 agent」** | 用户要求「把手从键盘上释放出来」；12 个手势已用满，只有 B 的长按不占用其他功能（代价：审批拒绝改用轻按） |
+| 8b | — | **`b.hold` 再改为「程序切换器」（2026-09-18）** | 用户要「⌘⇥ 那样在所有程序里选」；两 agent 互切是它的特例（初始高亮上一个程序）。复用菜单会话，不合成 ⌘⇥（本机无效且要求 ⌘ 常按） |
 | 9 | 输出只有按键 + 修饰键 | **增加系统效果 `RecipeEffect.activateAgentApp`** | 切前台 App 不是按键，adapter 表达不了；且它必须在任何前台 App 下都能用，所以也绕开白名单 |
 | 10 | §18「B 超过 tapMaxMs 即 hold」 | **改为以 `holdMs` 判定，且 chord 优先** | 一次代码审查发现 300 ms 就会切窗口；破坏性动作不能用「比文档更激进」的门槛 |
 | 11 | 释放复用同一条 dispatch 路径 | **释放按「实际发出的按键」处理，不再鉴权/重解析** | 否则中途换前台/换 profile 会让按键卡住（实测复现） |
@@ -369,7 +403,10 @@ Tools/dump-menu-accelerators.swift 用 AX API 导出运行中 App 的真实菜�
   `releaseAll` 因此少释放一个修饰键 —— 两条既有测试立刻抓到，已按原语义重做。
 
 ### 未验证 ⚠️
-- **`B 长按` 与手柄菜单** —— 已通过手柄实机验收（2026-09-16）：切 App、菜单打开/导航/执行/
+- **程序切换器（`B 长按`，2026-09-18）** —— 只有 206 个单测；**横向浮层的真实绘制、不抢焦点、
+  手柄实机**都未验，清单在 `docs/pending-user-tests.md` §L。同一改动把 `AppActivator` 的
+  AppleScript 寻址从名字换成 bundle ID，所以菜单栏 `Focus Other Agent Now`（§I 第 1 项）也需要重验一次。
+- **旧 `B 长按`（切另一个 agent）与手柄菜单** —— 已通过手柄实机验收（2026-09-16）：切 App、菜单打开/导航/执行/
   B 关闭、语音输入、以及三者的交替重复使用。
 - **T / H 模式实拨验证** —— 代码层面确认不匹配键盘/鼠标设备，但没实际拨过开关
 - **Claude 的 Code 面板命令**（`⌘J` 终端 / `⌘⇧D` 变更 / `⌘⇧F` 文件 / `⌘;` 侧边对话）

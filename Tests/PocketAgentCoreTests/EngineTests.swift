@@ -42,6 +42,7 @@ final class EngineTests: XCTestCase {
             onMenuChanged?(menu)
             return true
         }
+        @discardableResult func openAppSwitcher(frontmostBundleID: String?) -> Bool { false }
         func closeMenu() {
             openMenu = nil
             onMenuChanged?(nil)

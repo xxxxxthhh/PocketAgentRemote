@@ -134,7 +134,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         monitorItem.target = self
         menu.addItem(monitorItem)
 
-        // Same path as holding B: lets the user verify the switch without the controller in hand.
+        // The old two-agent toggle, kept as a manual entry point now that holding B opens the switcher.
         let switchItem = NSMenuItem(title: "Focus Other Agent Now", action: #selector(focusOtherAgent), keyEquivalent: "")
         switchItem.target = self
         menu.addItem(switchItem)
@@ -144,6 +144,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menuItem.target = self
         menuItem.isEnabled = !environment.isMenuVisible
         menu.addItem(menuItem)
+
+        // Same path as holding B: the app switcher, so it can be checked without the controller.
+        let switcherItem = NSMenuItem(title: "Show App Switcher", action: #selector(showAppSwitcher), keyEquivalent: "")
+        switcherItem.target = self
+        switcherItem.isEnabled = !environment.isMenuVisible
+        menu.addItem(switcherItem)
 
         let configItem = NSMenuItem(title: "Open Config File", action: #selector(openConfig), keyEquivalent: "")
         configItem.target = self
@@ -231,6 +237,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func showControllerMenu() {
         environment.showControllerMenu()
+    }
+
+    @objc private func showAppSwitcher() {
+        environment.showAppSwitcher()
     }
 
     @objc private func openConfig() {

@@ -114,7 +114,7 @@ final class AdapterTests: XCTestCase {
         for action in AgentAction.allCases where action != .navigateUp && action != .navigateDown
             && action != .navigateLeft && action != .navigateRight
             && action != .submit && action != .cancelOrInterrupt
-            && action != .focusOtherAgent && action != .openMenu {
+            && action != .focusOtherAgent && action != .openMenu && action != .openAppSwitcher {
             XCTAssertNil(generic.support(for: action).recipe, "\(action) must not fire from the generic profile")
         }
     }
@@ -123,6 +123,8 @@ final class AdapterTests: XCTestCase {
         for adapter in [codex as ToolAdapter, claude, generic] {
             XCTAssertEqual(adapter.support(for: .openMenu).recipe?.effect, .openMenu)
             XCTAssertTrue(adapter.support(for: .openMenu).recipe?.steps.isEmpty ?? false)
+            XCTAssertEqual(adapter.support(for: .openAppSwitcher).recipe?.effect, .openAppSwitcher)
+            XCTAssertTrue(adapter.support(for: .openAppSwitcher).recipe?.steps.isEmpty ?? false)
         }
     }
 

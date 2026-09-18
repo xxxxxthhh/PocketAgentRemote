@@ -18,6 +18,9 @@ public protocol ActionDispatching: AnyObject {
     /// Opens the menu for an app; false when there is nothing to show for it.
     @discardableResult
     func openMenu(frontmostBundleID: String?) -> Bool
+    /// Opens the app switcher; false when there are not enough apps to switch between.
+    @discardableResult
+    func openAppSwitcher(frontmostBundleID: String?) -> Bool
     /// Takes the menu down without running anything.
     func closeMenu()
 
@@ -217,6 +220,14 @@ public final class ControllerEngine {
         guard !isMenuOpen else { return true }
         recognizer.resetAndEmit()
         return dispatcher.openMenu(frontmostBundleID: frontmost?.frontmostBundleID())
+    }
+
+    /// Opens the app switcher from outside the controller (menu bar). Same reset as `openMenu`.
+    @discardableResult
+    public func openAppSwitcher() -> Bool {
+        guard !isMenuOpen else { return true }
+        recognizer.resetAndEmit()
+        return dispatcher.openAppSwitcher(frontmostBundleID: frontmost?.frontmostBundleID())
     }
 
     /// Takes the menu down without running anything (screen-side close, controller gone).

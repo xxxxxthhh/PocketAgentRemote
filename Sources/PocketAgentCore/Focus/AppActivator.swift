@@ -105,6 +105,7 @@ public enum AgentPairResolver {
 /// | synthesised `⌘⇥` | ✗ no effect |
 /// | `NSWorkspace.openApplication(_:configuration:.activates)` | ✗ no effect |
 /// | **`tell application "X" to activate`** | **✓ works, both directions, repeatedly, no TCC prompt** |
+/// | `tell application id "X" to activate` (current form) | resolves by id verified from a shell (`get name`); activate-by-id from inside the app is pending the user's §L run |
 ///
 /// The in-process calls are not *wrong* so much as unverified on the target OS, so they stay as a
 /// cheap first attempt: several hundred milliseconds of latency is worth avoiding when they do
@@ -207,16 +208,17 @@ public final class AppActivator: AppActivating, @unchecked Sendable {
             return nil
 
         case .appleScript:
-            guard let app = NSRunningApplication
-                .runningApplications(withBundleIdentifier: bundleID).first
+            guard NSRunningApplication
+                .runningApplications(withBundleIdentifier: bundleID).first != nil
             else { return "app is not running" }
-            // The localized name is how AppleScript addresses the app; it comes from LaunchServices
-            // rather than from anything we hardcode, so a renamed app still resolves.
-            let name = app.localizedName ?? bundleID
-            let escaped = name.replacingOccurrences(of: "\\", with: "\\\\")
+            // Addressed by bundle ID, not by name. Names are localized and need not be unique, and
+            // since the app switcher any running app can be a target — `application id` is the
+            // form that cannot pick the wrong one. Verified to resolve on this machine
+            // (`tell application id "com.openai.codex" to get name` → ChatGPT).
+            let escaped = bundleID.replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
             var error: NSDictionary?
-            NSAppleScript(source: "tell application \"\(escaped)\" to activate")?
+            NSAppleScript(source: "tell application id \"\(escaped)\" to activate")?
                 .executeAndReturnError(&error)
             if let error {
                 let number = error[NSAppleScript.errorNumber] ?? "?"

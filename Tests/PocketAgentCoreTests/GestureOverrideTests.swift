@@ -86,7 +86,7 @@ final class GestureOverrideTests: XCTestCase {
         XCTAssertEqual(resolver.triggers(for: .gesture(.tap(.b))), [.raw(clearUnreads, .press)])
         // hold is not overridden, so it keeps its semantic meaning — which is the cross-app switch,
         // not the tap's Escape (see EventResolverTests.testBHasTwoGesturesWithDifferentMeanings).
-        XCTAssertEqual(resolver.triggers(for: .gesture(.hold(.b))), [.press(.focusOtherAgent)])
+        XCTAssertEqual(resolver.triggers(for: .gesture(.hold(.b))), [.press(.openAppSwitcher)])
     }
 
     func testUnrelatedGesturesAreUnaffected() {
