@@ -189,7 +189,7 @@ Codex / Claude。
 - **`bHold` 默认值是代码常量，不是存盘配置**，所以不需要像 `b.left` 那样做迁移。
 - 菜单栏 `Show App Switcher` 是等价入口；日志 `MENU  app switcher opened with N apps` / `FOCUS`。
 - 单测：`Tests/PocketAgentCoreTests/AppSwitcherTests.swift`（builder、dispatcher、端到端长按）。
-  **真实窗口冒烟与手柄实机验收尚未做**，见 `docs/pending-user-tests.md` §L。
+  手柄实机 11 项验收已通过（2026-09-18），见 `docs/pending-user-tests.md` §L。
 
 ## 4. 配置
 
@@ -403,9 +403,8 @@ Tools/dump-menu-accelerators.swift 用 AX API 导出运行中 App 的真实菜�
   `releaseAll` 因此少释放一个修饰键 —— 两条既有测试立刻抓到，已按原语义重做。
 
 ### 未验证 ⚠️
-- **程序切换器（`B 长按`，2026-09-18）** —— 只有 206 个单测；**横向浮层的真实绘制、不抢焦点、
-  手柄实机**都未验，清单在 `docs/pending-user-tests.md` §L。同一改动把 `AppActivator` 的
-  AppleScript 寻址从名字换成 bundle ID，所以菜单栏 `Focus Other Agent Now`（§I 第 1 项）也需要重验一次。
+- **程序切换器（`B 长按`，2026-09-18）** —— 已通过手柄实机 11 项验收（`docs/pending-user-tests.md` §L），
+  含 `AppActivator` 改为按 bundle ID 寻址后 `Focus Other Agent Now` 的重验。
 - **旧 `B 长按`（切另一个 agent）与手柄菜单** —— 已通过手柄实机验收（2026-09-16）：切 App、菜单打开/导航/执行/
   B 关闭、语音输入、以及三者的交替重复使用。
 - **T / H 模式实拨验证** —— 代码层面确认不匹配键盘/鼠标设备，但没实际拨过开关

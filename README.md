@@ -318,7 +318,7 @@ chord       b.up · b.down · b.left · b.right · b.a
 | Phase 3 适配层 | ✅ Codex / Claude / Generic 三套；Codex 侧 8/11 动作有默认键位 |
 | 跨 App 切换（`Focus Other Agent Now`） | ✅ 已验收；手柄入口已让位给程序切换器 |
 | 手柄菜单（`B+←`） | ✅ 单测 + 真实窗口冒烟 + 手柄实机验收全部通过 |
-| 程序切换器（`B 长按`） | ✅ 单测通过；**真实窗口与手柄真机验收待你**（`docs/pending-user-tests.md` §L） |
+| 程序切换器（`B 长按`） | ✅ 单测 + 手柄实机 11 项验收全部通过（2026-09-18） |
 
 ### 已知限制
 
