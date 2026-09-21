@@ -13,6 +13,16 @@ final class FrontmostAppObserver: FrontmostAppProviding {
     }
 }
 
+/// Which shape the command menu takes. Development-time only (G2 prototype, T1.3).
+///
+/// In-process and **not persisted**: it exists so a trial can switch between the shipped list and
+/// the dial between runs without a config key that would outlive the experiment. It costs no
+/// controller button either — the menu bar is the only way to change it.
+enum CommandMenuLayout {
+    case list
+    case dial
+}
+
 /// Owns the whole running system: config, controller engine, adapters, emitter.
 final class AppEnvironment {
     let configStore: ConfigStore
@@ -25,6 +35,13 @@ final class AppEnvironment {
     let activator: AppActivator
     /// The on-screen menu the controller can drive.
     let overlay: MenuOverlayController
+    /// Short messages for things that did not happen. Independent of `overlay` in every respect.
+    let failureToast = FailureToastController()
+    /// Which command menu to build. Changed from the menu bar, never stored. The dial only exists
+    /// for Codex, so this has no effect anywhere else.
+    var commandMenuLayout: CommandMenuLayout = .list {
+        didSet { onStatusChange?() }
+    }
     /// Running apps in recency order, for the app switcher (hold B).
     let runningApps = RunningAppsTracker()
 
@@ -109,11 +126,15 @@ final class AppEnvironment {
 
         dispatcher.onDiagnostic = { [weak self] message in self?.debugLog.append("OUTPUT", message) }
         dispatcher.onUnsupported = { [weak self] action, reason in
-            self?.debugLog.append("SKIP", "\(action.rawValue): \(reason)")
+            guard let self else { return }
+            self.debugLog.append("SKIP", "\(action.rawValue): \(reason)")
+            self.showFailure(self.unsupportedMessage(action, reason))
         }
         dispatcher.onDenied = { [weak self] action, reason in
+            guard let self else { return }
             let label = action?.rawValue ?? "<gesture override>"
-            self?.debugLog.append("DENY", "\(label): \(reason)")
+            self.debugLog.append("DENY", "\(label): \(reason)")
+            self.showFailure(self.deniedMessage(action, reason))
         }
         // Focusing an app emits no keystroke, so it gets its own line: otherwise a press that did
         // nothing would look identical to a press that was never recognised.
@@ -121,6 +142,9 @@ final class AppEnvironment {
             guard let self else { return }
             self.debugLog.append("FOCUS", "\(action.rawValue): \(AppActivationReport.describe(outcome))")
             self.lastActivationSummary = AppActivationReport.describe(outcome)
+            // Only failures are shown. A successful switch is self-evident — the other app is now in
+            // front — and this batch deliberately adds no success feedback.
+            if !outcome.succeeded { self.showFailure(self.activationMessage(outcome)) }
             self.onStatusChange?()
         }
 
@@ -128,10 +152,20 @@ final class AppEnvironment {
         // that can actually run (and shows the matching app's name in its header).
         dispatcher.menuBuilder = { [weak self] bundleID in
             guard let self else { return nil }
+            let config = self.configStore.config
+            let name = self.frontmostObserver.frontmostAppName()
+            // The dial is the experiment; the list is what ships. `AgentDialBuilder` returns nil for
+            // anything but Codex, so Claude keeps the list whatever this is set to — the fallback is
+            // the same call the list mode makes, not a second code path.
+            if self.commandMenuLayout == .dial,
+               let dial = AgentDialBuilder.menu(
+                   for: config, frontmostBundleID: bundleID, frontmostName: name) {
+                return dial
+            }
             return AgentMenuBuilder.menu(
-                for: self.configStore.config,
+                for: config,
                 frontmostBundleID: bundleID,
-                frontmostName: self.frontmostObserver.frontmostAppName()
+                frontmostName: name
             )
         }
         // The app switcher lists whatever is running, regardless of profile: it is the one menu
@@ -147,12 +181,30 @@ final class AppEnvironment {
             }
             return AppSwitcherBuilder.menu(apps: apps, frontmostBundleID: bundleID)
         }
+        // F3: a selection move republishes the *same* menu with a new highlight, and rebuilding the
+        // whole panel for that made moving through a 17-app strip cost 17 view rebuilds, a fresh
+        // frontmost-poll timer and a log line per press. So the contents decide which way to go:
+        // structurally identical and already on screen → repaint the highlight only.
+        //
+        // No log line here any more. This closure runs on every press, so anything written here is
+        // per-*draw* noise; the menu's lifecycle (opened / running / switching / closed by B /
+        // closed / refused) is reported by the dispatcher, which is the layer that knows which of
+        // those actually happened.
         engine.onMenuChanged = { [weak self] menu in
             guard let self else { return }
             if let menu {
-                self.debugLog.append("MENU", "open for \(menu.title): \(menu.items.map(\.title).joined(separator: " / "))")
-                self.overlay.show(menu)
+                if self.overlay.isVisible, self.overlay.menu?.hasSameStructure(as: menu) == true {
+                    self.overlay.render(menu)
+                } else {
+                    self.overlay.show(menu)
+                }
             } else {
+                // Read the F3 probes before `hide()` clears them. Deliberately its own tag: it is a
+                // temporary measurement, and it must not spend the menu's log budget.
+                self.debugLog.append(
+                    "OVERLAY",
+                    "session ended: rebuild=\(self.overlay.rebuildCount) timer=\(self.overlay.timerCreationCount)"
+                )
                 self.overlay.hide()
             }
             self.onStatusChange?()
@@ -164,8 +216,7 @@ final class AppEnvironment {
         overlay.onDismiss = { [weak self] in
             guard let self else { return }
             guard self.engine.isMenuOpen else { return }
-            self.engine.closeMenu()
-            self.debugLog.append("MENU", "closed")
+            self.engine.closeMenu()   // logs `MENU  closed` from the dispatcher
             self.onStatusChange?()
         }
 
@@ -174,6 +225,12 @@ final class AppEnvironment {
         engine.gestureOverridesProvider = { [weak self] in
             self?.gestureOverridesForCurrentFrontmostApp() ?? [:]
         }
+        // The menu-bar entry points (`showControllerMenu` / `showAppSwitcher`) go through the engine,
+        // which passes *this* down as the app the menu is built for. Unassigned it passed nil, and a
+        // session built for nobody is refused at execution time by the "same app still in front"
+        // check — so the menu bar could open a strip but never switch with it. The gesture path was
+        // unaffected because the dispatcher reads the frontmost app itself.
+        engine.frontmost = frontmostObserver
     }
 
     private static func describe(_ event: ResolvedEvent) -> String {
@@ -221,17 +278,120 @@ final class AppEnvironment {
             frontmostBundleID: frontmostObserver.frontmostBundleID()
         ) else {
             debugLog.append("FOCUS", "manual: the agent pair in config is empty")
+            // Same mapper as the dispatcher path, so the two entry points cannot drift apart.
+            showFailure(unsupportedMessage(.focusOtherAgent, "the agent pair in config is empty"))
             return nil
         }
         let outcome = activator.activate(bundleID: target)
         lastActivationSummary = AppActivationReport.describe(outcome)
         debugLog.append("FOCUS", "manual: \(lastActivationSummary ?? "")")
+        // This path calls the activator directly, so it never reaches `dispatcher.onActivation` —
+        // it has to show its own failure or the menu-bar entry point would stay silent.
+        if !outcome.succeeded { showFailure(activationMessage(outcome)) }
         onStatusChange?()
         return outcome
     }
 
     /// True while the on-screen menu is up.
     var isMenuVisible: Bool { overlay.isVisible }
+
+    // MARK: - Failure messages
+
+    /// Shows one short Chinese message. The single display path, so every failure looks the same
+    /// wherever it came from.
+    private func showFailure(_ message: String) {
+        failureToast.show(message)
+        debugLog.append("TOAST", message)
+    }
+
+    /// "已拦截：…" — the guard refused, or a menu row was refused because focus moved.
+    ///
+    /// The reason arrives as the English text `ActionGuard` (or the menu refusal) built, so this
+    /// matches on it. That is a coupling to those strings and they live in this same repo; if a
+    /// third reason is ever added the fallback shows it verbatim rather than lying.
+    private func deniedMessage(_ action: AgentAction?, _ reason: String) -> String {
+        if reason.contains("menu item refused") {
+            return "已拦截：前台已切换，菜单项未执行"
+        }
+        if reason.contains("requires an explicit profile") {
+            return "已拦截：当前是通用模式，工具专属动作不发送"
+        }
+        if reason.contains("macros are disabled") {
+            return "已拦截：宏未启用"
+        }
+        if reason.contains("cannot determine the frontmost") {
+            return "已拦截：读不到前台程序"
+        }
+        if reason.contains("not in the allowlist") {
+            return "已拦截：前台不是 agent（不在白名单）"
+        }
+        return "已拦截：\(actionLabel(action))（\(reason)）"
+    }
+
+    /// "<工具> 不支持：…" for an adapter gap, and a plain reason for the environmental refusals
+    /// that now arrive on the same hook.
+    private func unsupportedMessage(_ action: AgentAction, _ reason: String) -> String {
+        if reason.contains("no agent in front") {
+            return "打不开菜单：前台不是 agent"
+        }
+        if reason.contains("fewer than two apps") {
+            return "打不开切换器：可切换的程序不足两个"
+        }
+        if reason.contains("not wired up") {
+            return "切换失败：本次构建未接入程序激活"
+        }
+        if reason.contains("agent pair in config is empty") {
+            return "切换失败：配置里没有设置两个 agent"
+        }
+        return "\(profileLabel()) 不支持：\(actionLabel(action))"
+    }
+
+    /// "切换失败：<程序>（<原因>）" — the reason comes from the activator, not from a string match.
+    private func activationMessage(_ outcome: AppActivationOutcome) -> String {
+        let name = configStore.config.agentPair.name(for: outcome.bundleID)
+            ?? NSRunningApplication.runningApplications(withBundleIdentifier: outcome.bundleID)
+                .first?.localizedName
+            ?? outcome.bundleID
+        return "切换失败：\(name)（\(outcome.reason ?? "未知原因")）"
+    }
+
+    /// The Chinese label a menu already uses for this action, so the toast and the menu agree.
+    ///
+    /// The menus are the primary source — a row and a toast naming the same action differently would
+    /// be worse than either. Gesture-only actions appear in no menu, so they get the short names
+    /// below; anything still unnamed shows its identifier rather than a guess.
+    private func actionLabel(_ action: AgentAction?) -> String {
+        guard let action else { return "该手势" }
+        let overrides = configStore.config.overrides
+        for profile in ToolProfile.allCases {
+            if let title = AdapterCatalog.adapter(for: profile, overrides: overrides)
+                .menuItems.first(where: { $0.action == action })?.title {
+                return title
+            }
+        }
+        switch action {
+        case .goToRecentChat1: return "最近会话 1"
+        case .goToRecentChat2: return "最近会话 2"
+        case .nextChatNeedingAttention: return "待处理会话"
+        case .focusOtherAgent: return "切到另一个 agent"
+        case .openMenu: return "手柄菜单"
+        case .openAppSwitcher: return "程序切换器"
+        case .submit: return "提交"
+        case .cancelOrInterrupt: return "取消"
+        case .navigateUp, .navigateDown, .navigateLeft, .navigateRight: return "方向键"
+        default: return action.rawValue
+        }
+    }
+
+    private func profileLabel() -> String {
+        switch configStore.config.resolvedProfile(
+            frontmostBundleID: frontmostObserver.frontmostBundleID()
+        ) {
+        case .codex: return "Codex"
+        case .claudeCode: return "Claude"
+        case .genericTerminal: return "通用模式"
+        }
+    }
 
     /// Opens the controller's menu from the menu bar — the same code path as `B+←`, for when the
     /// controller is not in hand.

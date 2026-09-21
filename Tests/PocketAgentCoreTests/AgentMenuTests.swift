@@ -127,6 +127,109 @@ final class AgentMenuTests: XCTestCase {
         XCTAssertEqual(mutable.selection, 0)
     }
 
+    // MARK: - Structural identity (F3: only rebuild when the contents change)
+
+    private func stripMenu(
+        bundleID: String? = "com.openai.codex",
+        title: String = "切换程序",
+        items: [MenuItem]? = nil,
+        selection: Int = 1,
+        layout: AgentMenu.Layout = .strip
+    ) -> AgentMenu {
+        let rows = items ?? [
+            MenuItem(choice: .activateApp(bundleID: "com.openai.codex"), title: "Codex"),
+            MenuItem(choice: .activateApp(bundleID: "com.anthropic.claudefordesktop"), title: "Claude"),
+        ]
+        return AgentMenu(bundleID: bundleID, title: title, items: rows, selection: selection, layout: layout)
+    }
+
+    func testMovingTheSelectionLeavesTheStructureUnchanged() {
+        // The whole point: this is the case that must repaint instead of rebuilding.
+        var moved = stripMenu(selection: 0)
+        moved.moveSelection(by: 1)
+
+        XCTAssertNotEqual(moved.selection, 0, "the selection really did move")
+        XCTAssertTrue(stripMenu(selection: 0).hasSameStructure(as: moved))
+    }
+
+    func testTheSameRowCountWithADifferentActionIsADifferentStructure() {
+        let menu = AgentMenu(bundleID: "x", title: "t", items: [MenuItem(action: .newChat, title: "新建会话")])
+        let other = AgentMenu(bundleID: "x", title: "t", items: [MenuItem(action: .openModelPicker, title: "新建会话")])
+
+        XCTAssertFalse(menu.hasSameStructure(as: other), "same label, different action: must rebuild")
+    }
+
+    func testTheSameRowCountWithADifferentTitleIsADifferentStructure() {
+        let menu = AgentMenu(bundleID: "x", title: "t", items: [MenuItem(action: .newChat, title: "新建会话")])
+        let other = AgentMenu(bundleID: "x", title: "t", items: [MenuItem(action: .newChat, title: "新建对话")])
+
+        XCTAssertFalse(menu.hasSameStructure(as: other), "a relabelled row must rebuild")
+    }
+
+    func testADifferentLayoutIsADifferentStructure() {
+        XCTAssertFalse(stripMenu().hasSameStructure(as: stripMenu(layout: .list)))
+    }
+
+    func testADifferentAppIsADifferentStructure() {
+        XCTAssertFalse(stripMenu().hasSameStructure(as: stripMenu(bundleID: "com.apple.Safari")))
+    }
+
+    func testADifferentHeaderIsADifferentStructure() {
+        XCTAssertFalse(stripMenu().hasSameStructure(as: stripMenu(title: "Codex")))
+    }
+
+    func testReorderedRowsAreADifferentStructure() {
+        let reversed = Array(stripMenu().items.reversed())
+        XCTAssertFalse(stripMenu().hasSameStructure(as: stripMenu(items: reversed)),
+                       "the rows are compared in order, so the strip cannot silently reshuffle")
+    }
+
+    // MARK: - Structural identity of the dial (T1.3)
+
+    private func dial() -> AgentMenu? {
+        var config = AppConfig()
+        config.profileMode = .auto
+        return AgentDialBuilder.menu(for: config, frontmostBundleID: "com.openai.codex")
+    }
+
+    func testArmingADialSlotIsNotAStructureChange() {
+        guard var armed = dial(), let fresh = dial() else { return XCTFail("no dial") }
+        armed.selectSlot(.down)
+
+        XCTAssertTrue(armed.hasSelection)
+        XCTAssertTrue(fresh.hasSameStructure(as: armed),
+                      "which slot is armed is highlight state, so T1.1 only repaints")
+    }
+
+    func testTheMorePageIsADifferentStructureFromTheDial() {
+        guard let root = dial(), let page = root.items.last?.submenu else { return XCTFail("no page") }
+        let pageMenu = AgentMenu(bundleID: root.bundleID, title: page.title, items: page.items)
+
+        XCTAssertFalse(root.hasSameStructure(as: pageMenu),
+                       "a page turn really does change the panel, so it must rebuild")
+    }
+
+    func testADialSlotPointingSomewhereElseIsADifferentStructure() {
+        guard let root = dial() else { return XCTFail("no dial") }
+        var swapped = root.items
+        swapped[0] = MenuItem(action: .archiveChat, title: "新建会话")   // same label, other action
+        let other = AgentMenu(bundleID: root.bundleID, title: root.title, items: swapped,
+                              layout: .dial, hasSelection: false)
+
+        XCTAssertFalse(root.hasSameStructure(as: other),
+                       "a slot that would run something else must rebuild, however it is labelled")
+    }
+
+    func testADialIsNeverTheSameStructureAsTheList() {
+        var config = AppConfig()
+        config.profileMode = .auto
+        guard let root = dial(),
+              let list = AgentMenuBuilder.menu(for: config, frontmostBundleID: "com.openai.codex")
+        else { return XCTFail("need both menus") }
+
+        XCTAssertFalse(root.hasSameStructure(as: list), "switching layout mid-session must rebuild")
+    }
+
     func testHintNamesTheControls() {
         // The controls are discoverable on screen rather than remembered.
         let hint = AgentMenu(bundleID: codex, title: "Codex", items: [
@@ -301,14 +404,19 @@ final class MenuEventTests: XCTestCase {
     func testOpeningTheMenuOutsideAnAgentReportsWhy() {
         let (dispatcher, emitter, _) = makeDispatcher(frontmost: "com.apple.Safari")
         var diagnostics: [String] = []
+        var unsupported: [(AgentAction, String)] = []
         dispatcher.onDiagnostic = { diagnostics.append($0) }
+        dispatcher.onUnsupported = { unsupported.append(($0, $1)) }
 
         openMenu(dispatcher)
 
         XCTAssertNil(dispatcher.openMenu)
         XCTAssertTrue(emitter.events.isEmpty)
-        XCTAssertEqual(diagnostics.count, 1)
-        XCTAssertTrue(diagnostics[0].contains("openMenu"))
+        // Reported through the structured hook now, so the app can show it rather than only log it.
+        XCTAssertEqual(diagnostics, [], "no bare diagnostic; the notification is the report")
+        XCTAssertEqual(unsupported.count, 1, "\(unsupported)")
+        XCTAssertEqual(unsupported.first?.0, .openMenu)
+        XCTAssertEqual(unsupported.first?.1, "no agent in front (or no commands available for it)")
     }
 
     func testAMenuRowCannotOpenTheMenuAgain() {

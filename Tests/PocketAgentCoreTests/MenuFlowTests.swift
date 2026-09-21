@@ -270,8 +270,9 @@ final class MenuFlowTests: XCTestCase {
         )
     }
 
-    /// And a quick tap is still an approval, sent immediately.
-    func testTappingAStillSubmitsImmediately() {
+    /// And a quick tap is still an approval: with `a.hold` bound, the Enter is decided and sent
+    /// when A comes back up (see `ASubmitAndVoiceHoldTests` for the timing edges).
+    func testTappingAIsStillAnApprovalSentOnRelease() {
         let rig = makeRig()
         defer { rig.engine.stop() }
 

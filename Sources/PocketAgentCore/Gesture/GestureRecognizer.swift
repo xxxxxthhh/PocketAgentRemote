@@ -57,10 +57,15 @@ public final class GestureRecognizer {
 
     /// What A is currently doing.
     ///
-    /// A is the one button that is both a one-shot action (`submit`, fired on the way *down* so
-    /// approvals stay instant) and a hold gesture (push-to-talk). The two are told apart by a timer:
-    /// a release before `aHoldMs` is a submit, crossing `aHoldMs` switches to the hold gesture and
-    /// **no Enter is ever sent** for that press. Nothing is deferred — the submit fires on press.
+    /// A is the one button that is both a one-shot action (`submit`) and a hold gesture
+    /// (push-to-talk). The two are told apart by a timer, and **which of them fires is only known
+    /// when A comes up**: a release before `aHoldMs` is a submit, sent at that moment; crossing
+    /// `aHoldMs` switches to the hold gesture and **no Enter is ever sent** for that press.
+    ///
+    /// So with `a.hold` bound the submit is *not* sent on the way down — it waits out the press, by
+    /// up to `aHoldMs`. Without an `a.hold` binding (`aHoldEnabled == false`) A stays a plain
+    /// one-shot button and the submit does fire on press, which is where the older
+    /// "nothing is deferred" description came from.
     private enum AState: Equatable {
         case idle
         /// A is down; still a submit if released in time.
@@ -193,6 +198,12 @@ public final class GestureRecognizer {
         }
 
         // A: one-shot action immediately, unless it is held long enough to become a hold gesture.
+        //
+        // A second down with no release in between is not a new press — the button never came up.
+        // Accepting it re-armed the hold timer (moving the threshold), and mid-hold it started a
+        // *second* hold whose key-down never got a matching up. Same rule as the directions above;
+        // `reset()` clears `aIsDown`, so a press after a menu or a disconnect is new again.
+        if aIsDown { return [] }
         aIsDown = true
         guard button == .a, aHoldEnabled else {
             // Must never repeat, so it is a complete press in one go.

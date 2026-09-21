@@ -70,6 +70,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         modeItem.submenu = modeMenu
         menu.addItem(modeItem)
 
+        // G2 prototype switch (T1.3). Development-time, in-process, not written to config.
+        let layoutItem = NSMenuItem(
+            title: "Command Menu: List / Dial (experimental)", action: nil, keyEquivalent: "")
+        let layoutMenu = NSMenu()
+        for (title, layout) in [("List", CommandMenuLayout.list), ("Dial (experimental)", .dial)] {
+            let item = NSMenuItem(title: title, action: #selector(selectCommandMenuLayout(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = layout == .dial ? "dial" : "list"
+            item.state = layout == environment.commandMenuLayout ? .on : .off
+            layoutMenu.addItem(item)
+        }
+        layoutItem.submenu = layoutMenu
+        menu.addItem(layoutItem)
+
         // Profile picker — only meaningful in manual mode (spec §6.4).
         let profileItem = NSMenuItem(title: "Profile", action: nil, keyEquivalent: "")
         let profileMenu = NSMenu()
@@ -178,6 +192,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         case .auto: return "Auto — follow the frontmost app"
         case .manual: return "Manual — pick one below"
         }
+    }
+
+    @objc private func selectCommandMenuLayout(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String else { return }
+        environment.commandMenuLayout = raw == "dial" ? .dial : .list
     }
 
     @objc private func selectProfileMode(_ sender: NSMenuItem) {

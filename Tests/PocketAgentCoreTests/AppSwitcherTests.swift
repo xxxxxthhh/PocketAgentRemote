@@ -106,14 +106,18 @@ final class AppSwitcherTests: XCTestCase {
     }
 
     func testOpenAppSwitcherIsSkippedWithNothingToSwitchTo() {
-        let (dispatcher, _, _) = makeDispatcher(apps: [apps[0]])
-        var diagnostics: [String] = []
-        dispatcher.onDiagnostic = { diagnostics.append($0) }
+        let (dispatcher, emitter, _) = makeDispatcher(apps: [apps[0]])
+        var unsupported: [(AgentAction, String)] = []
+        dispatcher.onUnsupported = { unsupported.append(($0, $1)) }
 
         dispatcher.dispatch(.press(.openAppSwitcher))
 
         XCTAssertNil(dispatcher.openMenu)
-        XCTAssertTrue(diagnostics.contains { $0.hasPrefix("SKIP  openAppSwitcher") }, "\(diagnostics)")
+        // Structured, so the app can tell the user why nothing appeared — exactly one notification.
+        XCTAssertEqual(unsupported.count, 1, "\(unsupported)")
+        XCTAssertEqual(unsupported.first?.0, .openAppSwitcher)
+        XCTAssertEqual(unsupported.first?.1, "fewer than two apps to switch between")
+        XCTAssertTrue(emitter.strokes.isEmpty, "a failure must type nothing")
     }
 
     func testLeftAndRightMoveTheHighlightAndWrap() {
@@ -194,14 +198,41 @@ final class AppSwitcherTests: XCTestCase {
     }
 
     func testWithoutAnActivatorTheChoiceIsReportedNotSilentlyDropped() {
-        let (dispatcher, _, _) = makeDispatcher(activator: nil)
-        var diagnostics: [String] = []
-        dispatcher.onDiagnostic = { diagnostics.append($0) }
+        let (dispatcher, emitter, _) = makeDispatcher(activator: nil)
+        var unsupported: [(AgentAction, String)] = []
+        dispatcher.onUnsupported = { unsupported.append(($0, $1)) }
         dispatcher.dispatch(.press(.openAppSwitcher))
 
         _ = dispatcher.handleMenuEvent(.pressed(.a, timestamp: 0))
 
-        XCTAssertTrue(diagnostics.contains { $0.hasPrefix("SKIP  switch to") }, "\(diagnostics)")
+        XCTAssertEqual(unsupported.count, 1, "exactly one notification: \(unsupported)")
+        XCTAssertEqual(unsupported.first?.0, .openAppSwitcher)
+        XCTAssertTrue(unsupported.first?.1.contains("not wired up") == true, "\(unsupported)")
+        XCTAssertTrue(emitter.strokes.isEmpty, "a failure must type nothing")
+    }
+
+    /// Focus moved while the strip was up: the choice is refused, reported once, and types nothing.
+    /// A switcher row has no action of its own, so it is reported as the switcher's rather than as
+    /// `nil`, which stays reserved for raw gesture overrides.
+    func testAStripChoiceRefusedAfterFocusMovedIsReportedOnce() {
+        let (dispatcher, emitter, frontmost) = makeDispatcher()
+        var denied: [(AgentAction?, String)] = []
+        var unsupported = 0
+        dispatcher.onDenied = { denied.append(($0, $1)) }
+        dispatcher.onUnsupported = { _, _ in unsupported += 1 }
+
+        dispatcher.dispatch(.press(.openAppSwitcher))
+        frontmost.bundleID = "com.apple.Safari"     // focus moved while the strip was up
+
+        _ = dispatcher.handleMenuEvent(.pressed(.a, timestamp: 0))
+
+        XCTAssertNil(dispatcher.openMenu, "a refused choice still takes the strip down")
+        XCTAssertTrue(emitter.strokes.isEmpty, "a refusal must type nothing")
+        XCTAssertEqual(denied.count, 1, "\(denied)")
+        XCTAssertEqual(denied.first?.0, .openAppSwitcher)
+        XCTAssertTrue(denied.first?.1.contains("menu item refused") == true, "\(denied)")
+        XCTAssertTrue(denied.first?.1.contains("Claude") == true, "the row's own label is named: \(denied)")
+        XCTAssertEqual(unsupported, 0, "and not reported a second time as unsupported")
     }
 
     // MARK: - End to end: hold B

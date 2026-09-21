@@ -9,6 +9,13 @@ import Foundation
 public enum MenuChoice: Equatable, Sendable {
     case run(AgentAction)
     case activateApp(bundleID: String)
+    /// Turn to a second page instead of doing anything (the dial's 「更多」 slot).
+    ///
+    /// The page travels *inside* the row, so the builder defines the whole tree up front and the
+    /// dispatcher only swaps which page is showing — no navigation stack, and no second builder
+    /// call at page-turn time. Exactly one level deep: the dial builder is where that is enforced,
+    /// because it is the layer that knows what a page means.
+    case openSubmenu(title: String, items: [MenuItem])
 }
 
 /// One row of the on-screen menu.
@@ -39,6 +46,12 @@ public struct MenuItem: Equatable, Sendable {
         if case .activateApp(let bundleID) = choice { return bundleID }
         return nil
     }
+
+    /// The page this row turns to; nil for every row that does something.
+    public var submenu: (title: String, items: [MenuItem])? {
+        if case .openSubmenu(let title, let items) = choice { return (title, items) }
+        return nil
+    }
 }
 
 /// The on-screen menu: which rows exist, and which one is selected.
@@ -65,7 +78,15 @@ public struct AgentMenu {
     public enum Layout: Equatable, Sendable {
         case list
         case strip
+        /// Four slots at the four directions (G2 prototype, Codex only). Pressing a direction
+        /// *selects* its slot; nothing runs until A. Unlike the other two it opens with **no**
+        /// selection, so the chord that opened the menu cannot leave a slot armed.
+        case dial
     }
+
+    /// Which direction owns which slot, in item order. One source of truth for the model and for
+    /// the overlay's label placement; a dial menu's `items` must be built in exactly this order.
+    public static let dialSlotOrder: [PhysicalButton] = [.up, .left, .down, .right]
 
     /// The app the menu was opened for. Held so a choice can be refused when focus has moved on.
     public let bundleID: String?
@@ -74,18 +95,34 @@ public struct AgentMenu {
     public let layout: Layout
     public private(set) var items: [MenuItem]
     public private(set) var selection: Int
+    /// Whether `selection` means anything yet.
+    ///
+    /// Always true for a list or a strip — both open on a row, which is what makes "hold B, press A"
+    /// a one-gesture jump. A dial opens on **nothing**: its slots are the four directions, and the
+    /// `B+←` that opened the menu would otherwise read as "select the left slot". Highlight state,
+    /// so it is deliberately not part of `hasSameStructure`.
+    public private(set) var hasSelection: Bool
 
-    public init(bundleID: String?, title: String, items: [MenuItem], selection: Int = 0, layout: Layout = .list) {
+    public init(
+        bundleID: String?,
+        title: String,
+        items: [MenuItem],
+        selection: Int = 0,
+        layout: Layout = .list,
+        hasSelection: Bool = true
+    ) {
         self.bundleID = bundleID
         self.title = title
         self.layout = layout
         self.items = items
         self.selection = items.isEmpty ? 0 : min(max(selection, 0), items.count - 1)
+        self.hasSelection = hasSelection
     }
 
-    /// The row to run, or nil when the menu has nothing to offer.
+    /// The row to run, or nil when nothing is selected (a dial before any direction is pressed) or
+    /// the menu has nothing to offer.
     public var selectedItem: MenuItem? {
-        guard items.indices.contains(selection) else { return nil }
+        guard hasSelection, items.indices.contains(selection) else { return nil }
         return items[selection]
     }
 
@@ -96,6 +133,7 @@ public struct AgentMenu {
         switch layout {
         case .list: return "↑↓ 选择    A 执行    B 关闭"
         case .strip: return "←→ 选择    A 切换    B 关闭"
+        case .dial: return "方向选择 · A 执行 · B 关闭"
         }
     }
 
@@ -113,6 +151,55 @@ public struct AgentMenu {
 
     public mutating func moveUp() { moveSelection(by: -1) }
     public mutating func moveDown() { moveSelection(by: 1) }
+
+    /// Disarms the dial, so only a direction press since it last appeared can arm it.
+    ///
+    /// Used when coming back from the 「更多」 page: the dial then has exactly one safety rule —
+    /// "armed only by a direction you just pressed" — instead of one rule for a fresh open and
+    /// another for a return, which is the sort of difference a misfire hides in.
+    public mutating func clearSelection() {
+        guard layout == .dial else { return }
+        hasSelection = false
+        selection = 0
+    }
+
+    /// Selects the slot a direction owns. Returns false when this is not a dial, or that direction
+    /// owns no slot — the caller then swallows the press rather than passing it on.
+    ///
+    /// Absolute, not relative: a dial is four fixed positions, so ↑ always means the top slot
+    /// however the highlight got where it is.
+    @discardableResult
+    public mutating func selectSlot(_ button: PhysicalButton) -> Bool {
+        guard layout == .dial,
+              let index = Self.dialSlotOrder.firstIndex(of: button),
+              items.indices.contains(index)
+        else { return false }
+        selection = index
+        hasSelection = true
+        return true
+    }
+
+    // MARK: - Structural identity
+
+    /// Whether `other` draws the same menu, ignoring which row is highlighted.
+    ///
+    /// The overlay rebuilds its views from the menu's *contents*; only the highlight depends on the
+    /// selection. So a caller that can tell "same structure, new selection" apart from "a different
+    /// menu" can repaint the highlight instead of rebuilding every row — which is what makes moving
+    /// through a 17-app strip free instead of 17 view rebuilds per press.
+    ///
+    /// The key is everything the drawing depends on: the app it was built for, the header, the
+    /// layout, and the rows **in order**. `MenuItem` is `Equatable` on exactly `(choice, title)`, so
+    /// comparing `items` already compares each row's action/target *and* its label — a menu with the
+    /// same number of rows but a different action or a different title is correctly a different
+    /// structure, and needs a rebuild. `selection` is deliberately excluded: it is the one thing that
+    /// changes without changing what is drawn.
+    public func hasSameStructure(as other: AgentMenu) -> Bool {
+        bundleID == other.bundleID
+            && title == other.title
+            && layout == other.layout
+            && items == other.items
+    }
 }
 
 /// Builds the menu for whatever is in front.
@@ -152,6 +239,59 @@ public enum AgentMenuBuilder {
             ?? frontmostName
             ?? profile.rawValue
         return AgentMenu(bundleID: frontmostBundleID, title: name, items: rows)
+    }
+}
+
+/// Builds the Codex four-direction dial (G2 prototype).
+///
+/// Deliberately not a general mechanism: one profile, four fixed slots, one sub-page. The titles
+/// come from `CodexDesktopAdapter.menuItems` so the dial and the list call the same action the same
+/// thing, and every slot is checked against the adapter before the dial is offered at all.
+public enum AgentDialBuilder {
+    /// ↑ 新建会话 · ← 查看变更 · ↓ 打开终端 · → 更多（切换模型 / 归档会话）.
+    ///
+    /// Nil for anything but Codex — that is what keeps Claude on the list — and nil when any one
+    /// slot's action is unrunnable. A dial with a hole in it would break the promise that a
+    /// direction always means the same thing, and the caller falls back to the list, which can drop
+    /// a row without moving the others.
+    public static func menu(
+        for config: AppConfig,
+        frontmostBundleID: String?,
+        frontmostName: String? = nil
+    ) -> AgentMenu? {
+        guard config.resolvedProfile(frontmostBundleID: frontmostBundleID) == .codex else { return nil }
+        let adapter = AdapterCatalog.adapter(for: .codex, overrides: config.overrides)
+
+        func row(_ action: AgentAction) -> MenuItem? {
+            guard adapter.support(for: action).recipe != nil,
+                  let title = adapter.menuItems.first(where: { $0.action == action })?.title
+            else { return nil }
+            return MenuItem(action: action, title: title)
+        }
+
+        guard let newChat = row(.newChat),
+              let changes = row(.inspectChanges),
+              let terminal = row(.openTerminal),
+              let model = row(.openModelPicker),
+              let archive = row(.archiveChat)
+        else { return nil }
+
+        // One level only: the page's own rows are plain actions, never another page.
+        let more = MenuItem(
+            choice: .openSubmenu(title: "更多", items: [model, archive]),
+            title: "更多"
+        )
+        let name = config.agentPair.name(for: frontmostBundleID ?? "")
+            ?? frontmostName
+            ?? ToolProfile.codex.rawValue
+        // Item order is `AgentMenu.dialSlotOrder`: up, left, down, right.
+        return AgentMenu(
+            bundleID: frontmostBundleID,
+            title: name,
+            items: [newChat, changes, terminal, more],
+            layout: .dial,
+            hasSelection: false
+        )
     }
 }
 

@@ -12,9 +12,20 @@ import Foundation
 /// silent no-ops are impossible to debug from a menu bar (spec §17).
 public final class ActionDispatcher: ActionDispatching {
     public var onDiagnostic: ((String) -> Void)?
-    /// An action the active profile cannot perform, with the adapter's explanation.
+    /// An action that could not be performed, with the explanation.
+    ///
+    /// Originally "the adapter has no recipe for this", and still mostly that — but it also carries
+    /// the environmental refusals that used to be diagnostics only (no agent in front to open a menu
+    /// for, fewer than two apps to switch between, no activator in this build, an empty agent pair).
+    /// They are reported here rather than through a parallel channel so there is exactly one
+    /// notification and one log line per failure; the alternative was a second hook whose only
+    /// difference would have been the log tag.
     public var onUnsupported: ((AgentAction, String) -> Void)?
-    /// An action the guard refused, with the reason. Nil action = a raw gesture override.
+    /// An action that was refused, with the reason.
+    ///
+    /// Two callers: the guard, and a menu row refused because focus moved while the menu was up.
+    /// `nil` still means a raw gesture override (which has no semantic action) — a refused switcher
+    /// row is reported as `.openAppSwitcher` rather than `nil` so that meaning stays unambiguous.
     public var onDenied: ((AgentAction?, String) -> Void)?
     /// An action that was actually sent. Nil action = a raw gesture override.
     public var onEmitted: ((AgentAction?, KeyStroke) -> Void)?
@@ -63,6 +74,11 @@ public final class ActionDispatcher: ActionDispatching {
         var menu: AgentMenu
         /// The app the menu was built for. A choice is refused if focus has moved on since.
         let bundleID: String?
+        /// The page to go back to, when the dial's 「更多」 turned to a second page.
+        ///
+        /// One slot, not a stack: the dial is root plus one level, and a general navigation stack
+        /// would be a framework for a shape that does not exist yet.
+        var parent: AgentMenu?
     }
 
     public init(
@@ -97,6 +113,55 @@ public final class ActionDispatcher: ActionDispatching {
     public func handleMenuEvent(_ event: InputEvent) -> MenuEventResult {
         guard var session = menuSession else { return .ignored }
         guard event.isPress else { return .handled }   // releases are ours, not the app's
+
+        // The dial is absolute rather than relative, and it can be showing nothing, so it answers
+        // its own directions and its own A before the shared list/strip handling.
+        if session.menu.layout == .dial {
+            if session.menu.selectSlot(event.button) {
+                menuSession = session
+                onMenuChanged?(session.menu)
+                return .handled
+            }
+            if event.button == .a {
+                guard let item = session.menu.selectedItem else {
+                    // Nothing armed yet: A is swallowed. Deliberately *no* publish — republishing
+                    // would redraw the panel and reset the recognizer for an event that changed
+                    // nothing — and deliberately no close, so a stray A does not cost the menu.
+                    menuSession = session
+                    return .handled
+                }
+                if let page = item.submenu {
+                    // A page turn, not a choice: it runs nothing, so it does not go through
+                    // `executeSelectedMenuItem` and the frontmost re-check does not apply to it.
+                    // The check still guards whatever the user finally picks on the page.
+                    session.parent = session.menu
+                    session.menu = AgentMenu(
+                        bundleID: session.menu.bundleID,
+                        title: page.title,
+                        items: page.items,
+                        layout: .list
+                    )
+                    menuSession = session
+                    onMenuChanged?(session.menu)
+                    onDiagnostic?("MENU  \(page.title) page opened with \(page.items.count) items")
+                    return .handled
+                }
+                menuSession = session
+                return executeSelectedMenuItem(config: configProvider())
+            }
+        }
+
+        // B on a sub-page goes back to the dial rather than closing: the page was a detour, and
+        // closing here would make 「更多」 a one-way door.
+        if event.button == .b, var parent = session.parent {
+            parent.clearSelection()
+            session.menu = parent
+            session.parent = nil
+            menuSession = session
+            onMenuChanged?(session.menu)
+            onDiagnostic?("MENU  back to the dial")
+            return .handled
+        }
 
         // Which axis navigates depends on the layout: ↑↓ for the list, ←→ for the strip. The other
         // axis is swallowed, never passed on — while a menu is up the controller is the menu's.
@@ -143,8 +208,11 @@ public final class ActionDispatcher: ActionDispatching {
         guard currentBundleID == session.bundleID else {
             menuSession = nil
             onMenuChanged?(nil)
-            let reason = "frontmost app changed (\(session.bundleID ?? "unknown") → \(currentBundleID ?? "unknown")); menu item refused"
-            onDiagnostic?("DENY  \(item.action?.rawValue ?? item.title): \(reason)")
+            let reason = "frontmost app changed (\(session.bundleID ?? "unknown") → \(currentBundleID ?? "unknown")); menu item refused: \(item.title)"
+            // Structured rather than a bare diagnostic, so the app can *show* the refusal instead of
+            // the user pressing A and seeing nothing happen. A switcher row has no action of its
+            // own, so it is reported as the switcher's — `nil` stays reserved for raw overrides.
+            onDenied?(item.action ?? .openAppSwitcher, reason)
             return .refused(reason)
         }
 
@@ -156,6 +224,11 @@ public final class ActionDispatcher: ActionDispatching {
             return activateApp(bundleID, title: item.title, currentBundleID: currentBundleID)
         case .run(let action):
             return run(action, title: item.title, currentBundleID: currentBundleID, config: config)
+        case .openSubmenu:
+            // Unreachable: the dial branch in `handleMenuEvent` turns pages itself and never gets
+            // here. Guarded rather than assumed, because a page turn must never be reported as a
+            // choice that ran.
+            return .ignored
         }
     }
 
@@ -169,7 +242,7 @@ public final class ActionDispatcher: ActionDispatching {
             return .activated(bundleID: bundleID)
         }
         guard let activator else {
-            onDiagnostic?("SKIP  switch to \(bundleID): app activation is not wired up in this build")
+            onUnsupported?(.openAppSwitcher, "app activation is not wired up in this build; cannot switch to \(bundleID)")
             return .activated(bundleID: bundleID)
         }
         onDiagnostic?("MENU  switching to \(bundleID) (\(title))")
@@ -213,7 +286,7 @@ public final class ActionDispatcher: ActionDispatching {
             return true
         }
         guard let menu = menuBuilder?(frontmostBundleID) else { return false }
-        menuSession = MenuSession(menu: menu, bundleID: frontmostBundleID)
+        menuSession = MenuSession(menu: menu, bundleID: frontmostBundleID, parent: nil)
         onMenuChanged?(menu)
         onDiagnostic?("MENU  opened for \(frontmostBundleID ?? "?") with \(menu.items.count) items")
         return true
@@ -230,7 +303,7 @@ public final class ActionDispatcher: ActionDispatching {
             return true
         }
         guard let menu = switcherBuilder?(frontmostBundleID) else { return false }
-        menuSession = MenuSession(menu: menu, bundleID: frontmostBundleID)
+        menuSession = MenuSession(menu: menu, bundleID: frontmostBundleID, parent: nil)
         onMenuChanged?(menu)
         onDiagnostic?("MENU  app switcher opened with \(menu.items.count) apps")
         return true
@@ -245,6 +318,12 @@ public final class ActionDispatcher: ActionDispatching {
         guard menuSession != nil else { return }
         menuSession = nil
         onMenuChanged?(nil)
+        // The one menu lifecycle event nothing else reported. Both callers arrive here through
+        // `ControllerEngine.closeMenu()`: the overlay noticing focus moved, and a controller detach —
+        // and the detach path never reaches the app's overlay callback, so a disconnect used to close
+        // the menu with no trace at all. Which of the two it was is readable from the line before it:
+        // a detach is preceded by the source's `disconnected (…)`, a focus loss by nothing.
+        onDiagnostic?("MENU  closed")
     }
 
     /// Handles `focusOtherAgent`: resolve the target from the configured pair and raise it.
@@ -258,12 +337,12 @@ public final class ActionDispatcher: ActionDispatching {
         config: AppConfig
     ) {
         guard let target = config.focusOtherAgentTarget(frontmostBundleID: frontmostBundleID) else {
-            onDiagnostic?("SKIP  \(action.rawValue): the agent pair in config is empty")
+            onUnsupported?(action, "the agent pair in config is empty")
             return
         }
 
         guard let activator else {
-            onDiagnostic?("SKIP  \(action.rawValue): app activation is not wired up in this build")
+            onUnsupported?(action, "app activation is not wired up in this build")
             return
         }
 
@@ -369,7 +448,7 @@ public final class ActionDispatcher: ActionDispatching {
         if action.recipeEffect == .openMenu {
             guard !isExecutingMenuItem else { return }
             guard openMenu(frontmostBundleID: frontmostBundleID) else {
-                onDiagnostic?("SKIP  openMenu: no agent in front (or no commands available for it)")
+                onUnsupported?(action, "no agent in front (or no commands available for it)")
                 return
             }
             return
@@ -380,7 +459,7 @@ public final class ActionDispatcher: ActionDispatching {
         if action.recipeEffect == .openAppSwitcher {
             guard !isExecutingMenuItem else { return }
             guard openAppSwitcher(frontmostBundleID: frontmostBundleID) else {
-                onDiagnostic?("SKIP  openAppSwitcher: fewer than two apps to switch between")
+                onUnsupported?(action, "fewer than two apps to switch between")
                 return
             }
             return

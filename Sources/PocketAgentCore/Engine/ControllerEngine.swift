@@ -75,6 +75,12 @@ public final class ControllerEngine {
     private var running = false
     /// The override table in force when the current chord started, kept until that chord releases.
     private var frozenOverrides: [String: GestureOverride]?
+    /// The same freeze for a single-button hold (`a.hold`), in its own slot.
+    ///
+    /// Deliberately not the chord's: a direction pressed *during* a voice hold is an ordinary
+    /// base-layer press and must resolve against the table in force now, not the one the hold
+    /// started with. Only the hold's own end reads this.
+    private var frozenHoldOverrides: [String: GestureOverride]?
 
     /// Supplies the frontmost bundle ID, so the menu can be built for the right app.
     public var frontmost: FrontmostAppProviding?
@@ -244,6 +250,9 @@ public final class ControllerEngine {
     /// must still be released. So the table is frozen when a chord starts and reused for its
     /// release, which is then dropped. New tables arriving while a gesture is still in flight are
     /// ignored rather than clearing the freeze: the release is the very next event to look at it.
+    ///
+    /// A one-button hold (`a.hold`) is frozen the same way, in its own slot — see
+    /// `frozenHoldOverrides` for why the two are not shared.
     private func triggers(for events: [ResolvedEvent]) -> [ActionTrigger] {
         events.flatMap { event -> [ActionTrigger] in
             if case .gesture(.chordReleased) = event {
@@ -251,9 +260,22 @@ public final class ControllerEngine {
                 frozenOverrides = nil
                 return triggers
             }
+            // A held single button (push-to-talk on A) needs the same treatment as a chord: the
+            // table can be re-resolved between `holdBegan` and `holdEnded` — the frontmost app
+            // moved, the profile switched, the config was reloaded — and releasing against the new
+            // table either keys up the wrong stroke or resolves to nothing at all, stranding the
+            // modifier this process put down.
+            if case .gesture(.holdEnded) = event {
+                let triggers = resolver.releaseTriggers(for: event, overrides: frozenHoldOverrides)
+                frozenHoldOverrides = nil
+                return triggers
+            }
             let table = frozenOverrides ?? resolver.gestureOverrides
             if case .gesture(.chord) = event {
                 frozenOverrides = table
+            }
+            if case .gesture(.holdBegan) = event {
+                frozenHoldOverrides = table
             }
             return resolver.pressTriggers(for: event, overrides: table)
         }

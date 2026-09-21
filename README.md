@@ -4,7 +4,31 @@
 
 > 当前生效的规格：`docs/spec-v0.3.md`
 > Phase 0 硬件实测：`docs/phase0-summary.md` · Phase 1 真机验证：`docs/phase1-verification.md`
-> **需要你亲自测的项：`docs/pending-user-tests.md`**
+> **需要你亲自测的项：`docs/test-manual.md`**（2026-09-18 批次）· 更早的：`docs/pending-user-tests.md`
+> 路线图与执行计划：`docs/ux-roadmap.md`
+
+---
+
+## 功能一览
+
+手柄只有六个键：↑↓←→、A、B。B 是修饰键。下面是现在能做的事，按使用频率排：
+
+| 你做什么 | 发生什么 |
+|---|---|
+| 方向键 | 在 Codex / Claude / 任何 App 里移动光标或选项 |
+| A 轻按 | 提交 / 批准（松开时发 Enter） |
+| A 按住说话 | 豆包语音输入，松开结束；这次按压不会提交 |
+| B 轻按 | 取消 / 拒绝（Escape） |
+| B 按住半秒 | 弹出**程序切换器**，←→ 选、A 切过去；在任何 App 下都能用 |
+| B + ← | 弹出**命令菜单**：新建会话、查看变更、打开终端、切换模型、归档会话（按前台 App 变） |
+| B + ↑ / ↓ | 跳到最近会话 1 / 2（Codex）或上一个 / 下一个会话（Claude） |
+| B + → | 跳到需要你处理的会话（Codex）/ 命令面板（Claude） |
+| B + A | 语音输入的旧方式，仍可用 |
+| 什么都不按 | profile 跟着前台 App 自动切；切到浏览器就只剩方向键和 Enter / Esc |
+| 按了没反应 | 屏幕顶部弹 3 秒中文提示告诉你为什么（被拦、不支持、切换失败） |
+| 手柄不在手边 | 菜单栏 → `Show Controller Menu` / `Show App Switcher` 是同一套菜单 |
+
+实验中、默认关闭：Codex 命令菜单可切成**四向操作盘**（方向直选，见「手柄菜单」）。
 
 ---
 
@@ -71,6 +95,7 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 ```
 
 `SKIP` = 当前 profile 不支持该动作；`DENY` = 被守卫拦下（前台 App 不在白名单等），原因都写在行尾。
+`TOAST` = 屏幕上弹了什么提示。
 
 ---
 
@@ -81,7 +106,7 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 | 手势 | 语义动作 | Codex 实际发出 |
 |---|---|---|
 | ↑ ↓ ← → | 导航 | 方向键（可长按重复） |
-| **A 轻按** | 提交 / **批准**，**按下即发** | `Enter` |
+| **A 轻按** | 提交 / **批准**（松开时发，最多晚 220 ms） | `Enter` |
 | **A 长按** | **按住说话**（豆包语音输入，单键） | 按住右 `⌥`，松开结束 |
 | **B 轻按** | 取消 / **拒绝** | `Escape` |
 | **B 长按** | **打开程序切换器**（手柄版 ⌘⇥，见下节） | 不发按键，弹出横向图标条 |
@@ -101,8 +126,8 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 > 入口只剩菜单栏的 `Focus Other Agent Now`；手柄上它被程序切换器取代，见下文。
 
 > **语音输入现在只需一个键：按住 A 说话。** 这是内置默认（`a.hold` 手势），不必改配置。
-> A 轻按仍然是「按下即发」的提交 —— 提交**没有延迟**：短按在按下瞬间发 `Enter`，
-> 长按则从一开始就不发，改成按住说话。阈值 `aHoldMs`（默认 220 ms）。
+> A 轻按仍然是提交，但 `Enter` 在**松开 A 的那一刻**才发（因为要等到松开才知道这次是短按还是长按）；
+> 长按跨过阈值后从不发 `Enter`，改成按住说话。阈值 `aHoldMs`（默认 220 ms）。
 >
 > 旧的 `B + A` 方式仍然可用（配置里的 `gestureKeyOverrides["b.a"]` 不被移除），
 > 两种方式指向同一个按键，可以按习惯任选。
@@ -200,11 +225,36 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
   激活通知来维护；启动前就开着、之后没碰过的程序排在后面。
 - 不想用手柄时：**菜单栏 → `Show App Switcher`** 是同一入口。
 
+**实验：四向操作盘（Dial）。** 菜单栏 → `Command Menu: List / Dial (experimental)` 勾 Dial，
+Codex 前台按 `B+←` 出来的不再是竖列表，而是上「新建会话」、左「查看变更」、下「打开终端」、右「更多」四个方向槽：
+按一个方向选中，再按 A 执行；「更多」里是切换模型 / 归档会话，B 回到操作盘。刚打开时**什么都不选中**，
+所以打开菜单的那下 ← 不会误选。默认仍是列表，这个选择重启后失效；要不要改成默认，等对照测试有数据再定。
+
 > Claude 侧暂时只有一项，是有原因的：其余命令要么键位未验证，要么在**普通 chat 语境下被
 > Claude 自己灰显**（`View > Show Terminal`、`View > Show Changes` 都是 `[OFF]`，它们属于
 > Code 会话）。宁可少一行，也不要出现「选了做错事」的一行 —— `⌘⇧I` 就曾以「切换模型」的名义
 > 在 Claude 里开出匿名会话。
 > Claude 里想切模型/用其他命令，`B+→` 的**命令面板**（`⌘K`）仍然直达。
+
+---
+
+## 屏幕提示
+
+按了没反应，以前只能翻日志；现在屏幕顶部会弹一条 3 秒的中文提示，例如：
+
+```text
+通用模式 不支持：最近会话 1        ← 在浏览器里按了 B+↑
+打不开菜单：前台不是 agent          ← 在浏览器里按了 B+←
+已拦截：前台不是 agent（不在白名单）  ← 手动模式下发给了白名单外的 App
+切换失败：微信（…原因…）            ← 程序切换器切不过去
+```
+
+- 只报**没发生**的事；成功的动作不弹，你看目标 App 就知道。
+- 提示不接管任何按键：显示期间按 B 还是 Escape，按方向还是方向。
+- 3 秒后自己消失；新提示替换旧提示。不能手动关，也没有配置项。
+- 菜单打开时提示出现在屏幕顶部，不和菜单重叠，到期也不会关掉菜单。
+
+---
 
 ## 配置
 
@@ -319,6 +369,11 @@ chord       b.up · b.down · b.left · b.right · b.a
 | 跨 App 切换（`Focus Other Agent Now`） | ✅ 已验收；手柄入口已让位给程序切换器 |
 | 手柄菜单（`B+←`） | ✅ 单测 + 真实窗口冒烟 + 手柄实机验收全部通过 |
 | 程序切换器（`B 长按`） | ✅ 单测 + 手柄实机 11 项验收全部通过（2026-09-18） |
+| 菜单栏入口（`Show Controller Menu` / `Show App Switcher`） | ✅ 2026-09-18 修复（此前开得出但执行不了）；待实机 |
+| A 键边界（重复按压、长按中切 App 不卡 ⌥） | ✅ 2026-09-18 修复；待实机 |
+| 切换器连按不重建浮层 | ✅ 单测；待实机 |
+| 屏幕提示（失败反馈） | ✅ 单测；待实机 |
+| 四向操作盘（Dial） | 🧪 实验原型，默认关闭；待对照测试 |
 
 ### 已知限制
 
@@ -329,6 +384,10 @@ chord       b.up · b.down · b.left · b.right · b.a
   所以 `Info.plist` 里的 `NSAppleEventsUsageDescription` 是必需的。若将来系统改规则，
   日志会打印实际生效的方法（`via appleScript`）以及全部失败原因。
 - **没有开机自启**（可选功能，未实现）。
+- **A 轻按的 Enter 在松开时才发**（最多晚 220 ms）：因为要等到松开才知道这次是短按还是按住说话。
+  想要「按下即发」就得放弃单键语音，这是取舍不是 bug。
+- **屏幕提示不能手动关**，只能等 3 秒；也不弹成功提示。
+- **四向操作盘只有 Codex 有**，Claude 仍是列表；且选择不保存，重启回到列表。
 - 手柄的 **H 档（键盘模式）不消费输入** —— 只识别。C 档两个变体都完整支持。
 
 ---
@@ -338,7 +397,9 @@ chord       b.up · b.down · b.left · b.right · b.a
 ```text
 docs/HANDOFF.md                ⭐ 当前真实状态（新会话从这里读起）
 docs/spec-v0.3.md              设计意图（与实现已有偏离，见 HANDOFF §6）
-docs/pending-user-tests.md     待验证清单
+docs/ux-roadmap.md             体验路线图 + §7 执行计划（任务单、验收标准）
+docs/test-manual.md            2026-09-18 批次的功能测试手册（你按这个测）
+docs/pending-user-tests.md     更早的待验证清单
 docs/codex-shortcuts.md        Codex 快捷键（官方面板 + 菜单实测导出）
 docs/codex-menu-shortcuts.md   菜单导出早期版本（44 条，对照用）
 docs/phase0-summary.md         硬件实测结论与实现约束
@@ -362,7 +423,7 @@ scripts/make-app.sh            构建探针 App
 
 ```bash
 swift build
-swift test                                  # 171 个测试
+swift test                                  # 279 个测试
 ./.build/debug/coresmoke --duration 60      # 真机看手势链路（只打日志）
 ./.build/debug/agentprobe watch             # 看原始 HID 报告
 swift Tools/dump-menu-accelerators.swift ChatGPT   # 导出 Codex 的真实菜单快捷键

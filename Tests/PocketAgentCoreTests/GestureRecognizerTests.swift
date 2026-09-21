@@ -65,7 +65,7 @@ final class GestureRecognizerTests: XCTestCase {
         return harness
     }
 
-    func testAShortTapIsStillASubmitAndIsNotDelayed() {
+    func testAShortTapIsStillASubmitOnceItIsReleased() {
         let harness = voiceHarness()
         harness.press(.a)
         harness.advance(to: 0.100)

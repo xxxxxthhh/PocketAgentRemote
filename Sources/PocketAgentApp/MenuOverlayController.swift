@@ -39,8 +39,23 @@ public final class MenuOverlayController {
     /// Strip layout (app switcher): one icon cell per app, and the highlighted app's name below.
     private var stripCells: [NSView] = []
     private var stripNameLabel: NSTextField?
+    /// Dial layout: the target app's name in the middle of the four slots.
+    private var dialCenterLabel: NSTextField?
     private var pollTimer: Timer?
+    /// The app `pollTimer` is watching, so the same session does not restart it (see
+    /// `startWatchingFrontmostApp`).
+    private var watchedBundleID: String?
     private(set) var menu: AgentMenu?
+
+    /// Temporary F3 probes: how much work a menu session actually costs.
+    ///
+    /// Both are expected to reach 1 and then stay there for the life of one menu, however many times
+    /// the selection moves — that is the whole claim of F3, and it is not otherwise observable from
+    /// outside. Reset by `hide()`, read by the app when the menu closes. Not configurable, and not
+    /// meant to outlive the measurement. Cleared when a session *starts* (see `show`), so they are
+    /// still readable when the app is told the menu closed, whichever path closed it.
+    private(set) var rebuildCount = 0
+    private(set) var timerCreationCount = 0
 
     public var isVisible: Bool { panel?.isVisible ?? false }
 
@@ -51,6 +66,13 @@ public final class MenuOverlayController {
     // MARK: - Presentation
 
     public func show(_ menu: AgentMenu) {
+        // A new session starts here, not at `hide()`: the focus-loss path hides itself from its own
+        // timer, and the app only learns about it afterwards — so counters cleared in `hide()` would
+        // always read 0 on exactly the path worth measuring.
+        if !isVisible {
+            rebuildCount = 0
+            timerCreationCount = 0
+        }
         self.menu = menu
         if panel == nil {
             panel = makePanel()
@@ -75,13 +97,16 @@ public final class MenuOverlayController {
             stripNameLabel?.stringValue = menu.selectedItem?.title ?? ""
             return
         }
+        // A dial can be showing nothing at all, so "which index is highlighted" is -1 rather than
+        // `selection`. Rows and slots share these arrays, so one rule paints both layouts.
+        let highlighted = menu.hasSelection ? menu.selection : -1
         for (index, background) in rowBackgrounds.enumerated() {
-            background.layer?.backgroundColor = (index == menu.selection
+            background.layer?.backgroundColor = (index == highlighted
                 ? NSColor.controlAccentColor.withAlphaComponent(0.85)
                 : NSColor.clear).cgColor
         }
         for (index, label) in rowLabels.enumerated() {
-            label.textColor = index == menu.selection ? .white : .labelColor
+            label.textColor = index == highlighted ? .white : .labelColor
         }
     }
 
@@ -125,11 +150,13 @@ public final class MenuOverlayController {
 
     private func rebuildContent(for menu: AgentMenu) {
         guard let panel, let content = panel.contentView else { return }
+        rebuildCount += 1
         content.subviews.forEach { $0.removeFromSuperview() }
         rowLabels.removeAll()
         rowBackgrounds.removeAll()
         stripCells.removeAll()
         stripNameLabel = nil
+        dialCenterLabel = nil
 
         let title = NSTextField(labelWithString: menu.title)
         title.font = .systemFont(ofSize: Self.titleFontSize, weight: .semibold)
@@ -171,6 +198,18 @@ public final class MenuOverlayController {
             return
         }
 
+        if menu.layout == .dial {
+            // The app's name goes in the middle instead of along the top: the four slots are what
+            // the eye should land on, and the header row would push them off centre.
+            let centre = NSTextField(labelWithString: menu.title)
+            centre.font = .systemFont(ofSize: Self.titleFontSize, weight: .semibold)
+            centre.textColor = .secondaryLabelColor
+            centre.alignment = .center
+            content.addSubview(centre)
+            dialCenterLabel = centre
+            title.isHidden = true
+        }
+
         for item in menu.items {
             let background = NSView()
             background.wantsLayer = true
@@ -181,6 +220,7 @@ public final class MenuOverlayController {
             let label = NSTextField(labelWithString: item.title)
             label.font = .systemFont(ofSize: Self.rowFontSize, weight: .medium)
             label.textColor = .labelColor
+            label.alignment = menu.layout == .dial ? .center : .left
             content.addSubview(label)
             rowLabels.append(label)
         }
@@ -192,6 +232,11 @@ public final class MenuOverlayController {
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         if menu.layout == .strip {
             positionStrip(panel, cells: menu.items.count, on: screen)
+            return
+        }
+
+        if menu.layout == .dial {
+            positionDial(panel, on: screen)
             return
         }
 
@@ -232,6 +277,52 @@ public final class MenuOverlayController {
         _ = content
     }
 
+    /// Four slots on a 3×3 grid: ↑ top, ← left, ↓ bottom, → right, app name in the middle.
+    ///
+    /// Text only, deliberately: no icons, no shortcut subtitles, no animation. The slot order is
+    /// `AgentMenu.dialSlotOrder`, which is also the order the builder emits items in, so index *is*
+    /// position and the highlight needs no separate mapping.
+    private func positionDial(_ panel: NSPanel, on screen: NSRect) {
+        let side = Self.dialSide
+        let size = NSSize(width: side, height: side + Self.hintHeight + Self.padding)
+        let origin = NSPoint(
+            x: screen.midX - size.width / 2,
+            y: screen.minY + screen.height * 0.22
+        )
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+
+        let grid = (side - Self.padding * 2) / 3
+        let left = Self.padding
+        let bottom = Self.hintHeight + Self.padding
+        // Grid cell (column, row) per item, row 0 at the top — in `AgentMenu.dialSlotOrder`, so
+        // item 0 is ↑, 1 is ←, 2 is ↓, 3 is →.
+        let cells: [(column: CGFloat, row: CGFloat)] = [(1, 0), (0, 1), (1, 2), (2, 1)]
+        for (index, background) in rowBackgrounds.enumerated() where index < cells.count {
+            let (column, row) = cells[index]
+            let frame = NSRect(
+                x: left + column * grid,
+                y: bottom + (2 - row) * grid,
+                width: grid,
+                height: grid
+            )
+            background.frame = frame.insetBy(dx: 4, dy: grid / 2 - Self.rowHeight / 2 + 4)
+            rowLabels[index].frame = background.frame
+        }
+
+        dialCenterLabel?.frame = NSRect(
+            x: left + grid,
+            y: bottom + grid + grid / 2 - Self.headerHeight / 2,
+            width: grid,
+            height: Self.headerHeight
+        )
+        hintLabel?.frame = NSRect(
+            x: Self.padding,
+            y: Self.padding,
+            width: size.width - Self.padding * 2,
+            height: Self.hintHeight
+        )
+    }
+
     /// Horizontal strip, ⌘⇥-style: icons in a row, the highlighted app's name underneath.
     ///
     /// Cells shrink when there are too many apps for the screen rather than letting the panel run
@@ -270,8 +361,13 @@ public final class MenuOverlayController {
     // MARK: - Focus watching
 
     private func startWatchingFrontmostApp(_ bundleID: String?) {
+        // Already watching this app: keep the timer running. Rebuilding the panel for a structure
+        // change is no reason to restart the poll, and a selection move never gets here at all. A
+        // structure change that *does* name a different app falls through and re-targets.
+        if let pollTimer, pollTimer.isValid, watchedBundleID == bundleID { return }
         stopWatching()
         guard let bundleID else { return }
+        timerCreationCount += 1
         let timer = Timer(timeInterval: frontmostCheckInterval, repeats: true) { [weak self] _ in
             guard let self, self.isVisible else { return }
             guard self.frontmost.frontmostBundleID() != bundleID else { return }
@@ -282,11 +378,13 @@ public final class MenuOverlayController {
         // `.common` so it keeps firing while the user interacts with menus or the panel.
         RunLoop.main.add(timer, forMode: .common)
         pollTimer = timer
+        watchedBundleID = bundleID
     }
 
     private func stopWatching() {
         pollTimer?.invalidate()
         pollTimer = nil
+        watchedBundleID = nil
     }
 
     // MARK: - Metrics
@@ -299,6 +397,8 @@ public final class MenuOverlayController {
     private static let hintHeight: CGFloat = 26
     /// Strip layout: the square each app icon sits in, and the name line under the strip.
     private static let stripCell: CGFloat = 88
+    /// Dial layout: the square the 3×3 grid of slots fills.
+    private static let dialSide: CGFloat = 460
     private static let stripNameHeight: CGFloat = 40
     /// Deliberately large: this is meant to be readable from a sofa, not from 40 cm away.
     private static let rowFontSize: CGFloat = 26

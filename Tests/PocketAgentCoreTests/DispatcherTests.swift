@@ -97,6 +97,70 @@ final class DispatcherTests: XCTestCase {
         XCTAssertTrue(denied[0].contains("allowlist"))
     }
 
+    // MARK: - T1.2: every failure exit reports itself exactly once, and types nothing
+
+    /// `focusOtherAgent` with nothing configured to focus. Used to be a diagnostic only, so the
+    /// button did nothing and said nothing.
+    ///
+    /// The pair has to be **explicitly blank** to be empty: `AgentPair.resolved` fills in a side the
+    /// config merely omitted, so `AgentPair()` is the default pair, not an empty one. Blank strings
+    /// are what `bundleIDs` drops — which is the only way a user reaches this exit.
+    func testAnEmptyAgentPairIsReportedOnce() {
+        let (dispatcher, emitter, _) = makeDispatcher(
+            profile: .codex,
+            pair: AppConfig.AgentPair(leftBundleID: "", rightBundleID: ""),
+            activator: SpyActivator())
+        var unsupported: [(AgentAction, String)] = []
+        dispatcher.onUnsupported = { unsupported.append(($0, $1)) }
+
+        dispatcher.dispatch(.press(.focusOtherAgent))
+
+        XCTAssertTrue(emitter.events.isEmpty, "a failure must type nothing")
+        XCTAssertEqual(unsupported.count, 1, "\(unsupported)")
+        XCTAssertEqual(unsupported.first?.0, .focusOtherAgent)
+        XCTAssertEqual(unsupported.first?.1, "the agent pair in config is empty")
+    }
+
+    /// A build with no activator wired up: the same, one notification rather than silence.
+    func testFocusWithoutAnActivatorIsReportedOnce() {
+        let (dispatcher, emitter, _) = makeDispatcher(profile: .codex, activator: nil)
+        var unsupported: [(AgentAction, String)] = []
+        dispatcher.onUnsupported = { unsupported.append(($0, $1)) }
+
+        dispatcher.dispatch(.press(.focusOtherAgent))
+
+        XCTAssertTrue(emitter.events.isEmpty)
+        XCTAssertEqual(unsupported.count, 1, "\(unsupported)")
+        XCTAssertEqual(unsupported.first?.1, "app activation is not wired up in this build")
+    }
+
+    /// A real activation attempt that failed. Already structured before T1.2 — pinned here so the
+    /// app can rely on exactly one notification, and so nothing else reports it a second time.
+    func testAFailedActivationIsReportedOnceThroughOnActivation() {
+        let failing = SpyActivator()
+        failing.result = { bundleID in
+            AppActivationOutcome(
+                succeeded: false, bundleID: bundleID, method: nil, elapsedMs: 42,
+                attempts: [AppActivationAttempt(method: .appleScript, succeeded: false, elapsedMs: 42)],
+                reason: "AppleScript did not respond")
+        }
+        let (dispatcher, emitter, _) = makeDispatcher(profile: .codex, activator: failing)
+        var activations: [(AgentAction, AppActivationOutcome)] = []
+        var unsupported = 0
+        var denied = 0
+        dispatcher.onActivation = { activations.append(($0, $1)) }
+        dispatcher.onUnsupported = { _, _ in unsupported += 1 }
+        dispatcher.onDenied = { _, _ in denied += 1 }
+
+        dispatcher.dispatch(.press(.focusOtherAgent))
+
+        XCTAssertTrue(emitter.events.isEmpty, "focusing an app types nothing, pass or fail")
+        XCTAssertEqual(activations.count, 1, "\(activations)")
+        XCTAssertEqual(activations.first?.1.succeeded, false)
+        XCTAssertEqual(activations.first?.1.reason, "AppleScript did not respond")
+        XCTAssertEqual(unsupported + denied, 0, "and it must not also be reported as unsupported/denied")
+    }
+
     func testUnsupportedActionEmitsNothingAndCarriesTheAdapterNote() {
         let (dispatcher, emitter, _) = makeDispatcher(profile: .codex)
         var unsupported: [(AgentAction, String)] = []
