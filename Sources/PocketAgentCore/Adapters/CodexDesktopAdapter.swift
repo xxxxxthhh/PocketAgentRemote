@@ -54,6 +54,7 @@ public struct CodexDesktopAdapter: ToolAdapter {
         case .navigateDown: return .supported(Recipe.held(.downArrow))
         case .navigateLeft: return .supported(Recipe.held(.leftArrow))
         case .navigateRight: return .supported(Recipe.held(.rightArrow))
+        case .deleteBackward: return .supported(Recipe.held(.delete))
 
         // approval.approve = Enter, approval.decline = Escape (registry)
         case .submit: return .supported(Recipe.press(.enter))

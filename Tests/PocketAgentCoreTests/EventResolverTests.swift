@@ -35,8 +35,14 @@ final class EventResolverTests: XCTestCase {
             resolver.triggers(for: .gesture(.chord(modifier: .b, key: .left))), [.press(.openMenu)])
         XCTAssertEqual(
             resolver.triggers(for: .gesture(.chord(modifier: .b, key: .right))), [.press(.nextChatNeedingAttention)])
+        // B+A is backspace (2026-09-21), and it is *held* for the chord like a direction: down on
+        // the chord, up on its release. Every other chord is a one-shot press.
         XCTAssertEqual(
-            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .a))), [.press(.inspectChanges)])
+            resolver.triggers(for: .gesture(.chord(modifier: .b, key: .a))), [.down(.deleteBackward)])
+        XCTAssertEqual(
+            resolver.releaseTriggers(for: .gesture(.chordReleased(modifier: .b, key: .a))), [.up(.deleteBackward)])
+        XCTAssertEqual(
+            resolver.releaseTriggers(for: .gesture(.chordReleased(modifier: .b, key: .up))), [])
     }
 
     func testDefaultBLayerCoversEverySecondaryKey() {

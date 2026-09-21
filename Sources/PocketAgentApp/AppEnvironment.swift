@@ -59,6 +59,7 @@ final class AppEnvironment {
         configStore = ConfigStore()
         let config = configStore.load()
         AppEnvironment.adoptMenuChordIfNeeded(store: configStore)
+        AppEnvironment.adoptBackspaceChordIfNeeded(store: configStore)
 
         let emitter = CGEventEmitter()
         let observer = frontmostObserver
@@ -103,6 +104,19 @@ final class AppEnvironment {
         }
         let place = backup.map { "backup: \($0.lastPathComponent)" } ?? "no backup could be written"
         NSLog("PocketAgentRemote: removed a stale b.left override so B+← opens the menu (\(place), save=\(outcome))")
+    }
+
+    /// Same treatment for `b.a`: the old two-button voice grab, which every config from that week
+    /// carries verbatim, would otherwise keep `B+A` from becoming backspace.
+    private static func adoptBackspaceChordIfNeeded(store: ConfigStore) {
+        var probe = store.config
+        guard ConfigMigrations.adoptBackspaceChord(&probe) else { return }
+        let backup = store.backUp()
+        let outcome = store.update { config in
+            ConfigMigrations.adoptBackspaceChord(&config)
+        }
+        let place = backup.map { "backup: \($0.lastPathComponent)" } ?? "no backup could be written"
+        NSLog("PocketAgentRemote: removed the old b.a voice override so B+A is backspace (\(place), save=\(outcome))")
     }
 
     private func wire() {

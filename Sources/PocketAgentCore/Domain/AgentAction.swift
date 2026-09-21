@@ -23,6 +23,10 @@ public enum AgentAction: String, Codable, CaseIterable, Sendable {
     case submit
     case cancelOrInterrupt
     case queueFollowUp
+    /// Backspace. Exists for voice input: the transcript lands in the composer, and the only way
+    /// to fix a misheard word without reaching for the keyboard is to delete it from the controller.
+    /// Bound to `B+A` by default (2026-09-21), the chord the old two-button voice grab used to own.
+    case deleteBackward
 
     // MARK: Threads and workspace
     case newChat
@@ -174,7 +178,7 @@ public extension AgentAction {
     /// Spec §19: only the four navigation actions may repeat while the input is held.
     var allowsRepeat: Bool {
         switch self {
-        case .navigateUp, .navigateDown, .navigateLeft, .navigateRight: return true
+        case .navigateUp, .navigateDown, .navigateLeft, .navigateRight, .deleteBackward: return true
         default: return false
         }
     }
@@ -195,6 +199,8 @@ public extension AgentAction {
     var risk: ActionRisk {
         switch self {
         case .navigateUp, .navigateDown, .navigateLeft, .navigateRight: return .navigation
+        // Backspace is an editing key like the arrows: it carries no command and must work in any app.
+        case .deleteBackward: return .navigation
         case .submit, .cancelOrInterrupt: return .normal
         case .queueFollowUp, .openModelPicker, .inspectChanges, .toggleFastMode,
              .openPermissionModeMenu, .newChat, .archiveChat, .pinThread,

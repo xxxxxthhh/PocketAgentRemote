@@ -222,8 +222,9 @@ final class GestureRecognizerTests: XCTestCase {
         assertChord(.right, resolvesTo: .nextChatNeedingAttention)
     }
 
-    func testBPlusAInspectsChanges() {
-        assertChord(.a, resolvesTo: .inspectChanges)
+    func testBPlusADeletesBackward() {
+        // 2026-09-21: the chord the old two-button voice grab owned. 查看变更 lives in the menu.
+        assertChord(.a, resolvesTo: .deleteBackward)
     }
 
     func testChordDoesNotEmitEscape() {

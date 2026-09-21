@@ -18,6 +18,7 @@ public struct GenericTerminalAdapter: ToolAdapter {
         case .navigateDown: return .supported(Recipe.held(.downArrow))
         case .navigateLeft: return .supported(Recipe.held(.leftArrow))
         case .navigateRight: return .supported(Recipe.held(.rightArrow))
+        case .deleteBackward: return .supported(Recipe.held(.delete))
         case .submit: return .supported(Recipe.press(.enter))
         case .cancelOrInterrupt: return .supported(Recipe.press(.escape))
         // Not keystrokes, so the "no tool chord from the generic profile" rule does not apply.

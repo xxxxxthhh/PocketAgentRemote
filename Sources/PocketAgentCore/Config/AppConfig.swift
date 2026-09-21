@@ -443,6 +443,33 @@ public enum ConfigMigrations {
         }
         return changed
     }
+
+    /// Removes a `b.a` override **only when it is still the old push-to-talk default** (hold right
+    /// ⌥, no key) — global or per profile.
+    ///
+    /// `B+A` became backspace on 2026-09-21; voice moved to holding A on its own (`a.hold`) five days
+    /// earlier and every config that shipped in between carries this exact `b.a` entry, which would
+    /// otherwise keep winning over the new default. Anything else the user put on `b.a` is theirs.
+    @discardableResult
+    public static func adoptBackspaceChord(_ config: inout AppConfig) -> Bool {
+        func isOldVoiceGrab(_ binding: AppConfig.KeyBinding) -> Bool {
+            binding.key == nil && Set(binding.modifiers) == [.rightOption] && binding.hold
+        }
+        var changed = false
+        if let binding = config.gestureKeyOverrides["b.a"], isOldVoiceGrab(binding) {
+            config.gestureKeyOverrides.removeValue(forKey: "b.a")
+            changed = true
+        }
+        for (profile, bindings) in config.profileGestureKeyOverrides {
+            guard let binding = bindings["b.a"], isOldVoiceGrab(binding) else { continue }
+            config.profileGestureKeyOverrides[profile]?.removeValue(forKey: "b.a")
+            if config.profileGestureKeyOverrides[profile]?.isEmpty ?? false {
+                config.profileGestureKeyOverrides.removeValue(forKey: profile)
+            }
+            changed = true
+        }
+        return changed
+    }
 }
 
 /// Reads and writes `AppConfig` as JSON.

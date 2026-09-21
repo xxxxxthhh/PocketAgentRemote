@@ -52,6 +52,7 @@ public struct ClaudeDesktopAdapter: ToolAdapter {
         case .navigateDown: return .supported(Recipe.held(.downArrow))
         case .navigateLeft: return .supported(Recipe.held(.leftArrow))
         case .navigateRight: return .supported(Recipe.held(.rightArrow))
+        case .deleteBackward: return .supported(Recipe.held(.delete))
 
         // `enter` submit is confirmed in the chat surface but **not** verified in the Code surface
         // (research §6 caveat 2). Kept as the default, with the caveat recorded in spec v0.3 U-series.

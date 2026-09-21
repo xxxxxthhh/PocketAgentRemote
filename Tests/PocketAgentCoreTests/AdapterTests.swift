@@ -110,10 +110,12 @@ final class AdapterTests: XCTestCase {
         XCTAssertEqual(stroke(generic, .navigateUp), .key(.upArrow))
         XCTAssertEqual(stroke(generic, .submit), .key(.enter))
         XCTAssertEqual(stroke(generic, .cancelOrInterrupt), .key(.escape))
+        // Backspace is an editing key like the arrows: voice input lands in any app's composer.
+        XCTAssertEqual(stroke(generic, .deleteBackward), .key(.delete))
 
         for action in AgentAction.allCases where action != .navigateUp && action != .navigateDown
             && action != .navigateLeft && action != .navigateRight
-            && action != .submit && action != .cancelOrInterrupt
+            && action != .submit && action != .cancelOrInterrupt && action != .deleteBackward
             && action != .focusOtherAgent && action != .openMenu && action != .openAppSwitcher {
             XCTAssertNil(generic.support(for: action).recipe, "\(action) must not fire from the generic profile")
         }

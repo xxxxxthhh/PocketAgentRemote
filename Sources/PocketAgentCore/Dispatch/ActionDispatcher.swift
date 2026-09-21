@@ -85,12 +85,54 @@ public final class ActionDispatcher: ActionDispatching {
         configProvider: @escaping () -> AppConfig,
         frontmost: FrontmostAppProviding,
         emitter: InputEmitting,
-        activator: AppActivating? = nil
+        activator: AppActivating? = nil,
+        scheduler: GestureScheduler = DispatchGestureScheduler()
     ) {
         self.configProvider = configProvider
         self.frontmost = frontmost
         self.emitter = emitter
         self.activator = activator
+        self.scheduler = scheduler
+    }
+
+    // MARK: - Key repeat
+
+    /// Auto-repeat for held, repeatable actions (the directions and backspace).
+    ///
+    /// The system does not repeat a synthetic key-down the way it repeats a physical one, so a held
+    /// direction moved one step per press until this existed. The cadence is close to the macOS
+    /// default: a pause, then a steady rate. Each tick is another key-down of the same stroke — the
+    /// shape a physical auto-repeat has — and the one key-up still comes from the release.
+    public static let repeatDelay: TimeInterval = 0.35
+    public static let repeatInterval: TimeInterval = 0.08
+
+    private let scheduler: GestureScheduler
+    private var repeatTokens: [AgentAction: GestureSchedulerToken] = [:]
+
+    private func startRepeat(_ action: AgentAction, stroke: KeyStroke, frontmostBundleID: String?) {
+        stopRepeat(action)
+        repeatTokens[action] = scheduler.schedule(after: Self.repeatDelay) { [weak self] in
+            self?.repeatTick(action, stroke: stroke, frontmostBundleID: frontmostBundleID)
+        }
+    }
+
+    private func repeatTick(_ action: AgentAction, stroke: KeyStroke, frontmostBundleID: String?) {
+        // Still held, and still the same app in front. A repeat that outlives either would keep
+        // typing into whatever came next; the release path alone cleans up the key that is down.
+        guard heldByAction[action] == stroke,
+              frontmost.frontmostBundleID() == frontmostBundleID
+        else {
+            repeatTokens.removeValue(forKey: action)
+            return
+        }
+        emitter.keyDown(stroke)
+        repeatTokens[action] = scheduler.schedule(after: Self.repeatInterval) { [weak self] in
+            self?.repeatTick(action, stroke: stroke, frontmostBundleID: frontmostBundleID)
+        }
+    }
+
+    private func stopRepeat(_ action: AgentAction) {
+        repeatTokens.removeValue(forKey: action)?.cancel()
     }
 
     // MARK: - On-screen menu
@@ -271,6 +313,8 @@ public final class ActionDispatcher: ActionDispatching {
     }
 
     public func releaseHeldStrokes() {
+        for (_, token) in repeatTokens { token.cancel() }
+        repeatTokens.removeAll()
         heldByAction.removeAll()
         heldRawStrokes.removeAll()
     }
@@ -473,6 +517,7 @@ public final class ActionDispatcher: ActionDispatching {
         // app left the allowlist in the meantime. Those are precisely the cases where re-resolving
         // (or re-authorising) would strand a held key in the target application.
         if case .up = trigger, let held = heldStroke(for: action) {
+            stopRepeat(action)
             emitter.keyUp(held)
             forget(action)
             onEmitted?(action, held)
@@ -507,7 +552,11 @@ public final class ActionDispatcher: ActionDispatching {
         case .down:
             emitter.keyDown(stroke)
             remember(stroke, for: action)
+            if recipe.allowsRepeat {
+                startRepeat(action, stroke: stroke, frontmostBundleID: frontmostBundleID)
+            }
         case .up:
+            stopRepeat(action)
             emitter.keyUp(stroke)
             forget(action)
         case .raw: break

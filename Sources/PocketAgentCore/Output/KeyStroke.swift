@@ -57,6 +57,7 @@ public enum Key: String, Codable, CaseIterable, Sendable {
     // Navigation / editing
     case upArrow, downArrow, leftArrow, rightArrow
     case enter, escape, tab, space
+    case delete, forwardDelete
 
     // Letters
     case a, b, c, d, e, f, g, h, i, j, k, l, m
@@ -79,6 +80,7 @@ public enum Key: String, Codable, CaseIterable, Sendable {
         ";": .semicolon, "'": .quote, ",": .comma, ".": .period, "/": .slash, "`": .grave,
         "up": .upArrow, "down": .downArrow, "left": .leftArrow, "right": .rightArrow,
         "return": .enter, "esc": .escape, "spacebar": .space,
+        "backspace": .delete, "del": .forwardDelete,
     ]
 
     public init(from decoder: Decoder) throws {
@@ -106,6 +108,8 @@ public enum Key: String, Codable, CaseIterable, Sendable {
         case .escape: return 53
         case .tab: return 48
         case .space: return 49
+        case .delete: return 51
+        case .forwardDelete: return 117
 
         case .a: return 0
         case .s: return 1

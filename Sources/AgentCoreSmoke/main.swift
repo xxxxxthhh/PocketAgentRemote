@@ -63,6 +63,7 @@ func previewStroke(for action: AgentAction) -> KeyStroke? {
     case .navigateRight: return .key(.rightArrow)
     case .submit: return .key(.enter)
     case .cancelOrInterrupt: return .key(.escape)
+    case .deleteBackward: return .key(.delete)
     case .newChat: return KeyStroke(.n, modifiers: [.command])
     case .openTerminal: return KeyStroke(.grave, modifiers: [.control])
     case .openModelPicker: return KeyStroke(.m, modifiers: [.control, .shift])

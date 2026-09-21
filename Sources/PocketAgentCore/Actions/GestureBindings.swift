@@ -59,7 +59,7 @@ public struct GestureBindings: Equatable, Sendable {
             .down: .goToRecentChat2,           // ⌥⌘2 — second most recent
             .left: .openMenu,                  // the menu itself; 新建会话 is its first row
             .right: .nextChatNeedingAttention, // ⌥⌘A — whichever agent wants you
-            .a: .inspectChanges,               // ⌥⌘B — review the diff
+            .a: .deleteBackward,               // ⌫ — fix a misheard word after voice input (2026-09-21)
         ],
         bHold: .openAppSwitcher
     )
@@ -256,14 +256,22 @@ public struct EventResolver: Sendable {
 
         case .gesture(.chord(_, let key)):
             guard let action = bindings.bLayer[key] else { return [] }
-            return [.press(action)]
+            // A repeatable action is *held* for the life of the chord, exactly like a base-layer
+            // direction: key down now, key up when the chord ends (see `chordReleased` below).
+            // Everything else on the B layer is a one-shot jump or command.
+            return action.allowsRepeat ? [.down(action)] : [.press(action)]
 
         case .gesture(.holdBegan):
             // A hold gesture is a *binding* gesture, never a semantic action: it starts a held key,
             // so it is resolved only through `gestureOverrides`.
             return []
 
-        case .gesture(.chordReleased), .gesture(.holdEnded):
+        case .gesture(.chordReleased(_, let key)):
+            // Only a held B-layer action has anything to release.
+            guard let action = bindings.bLayer[key], action.allowsRepeat else { return [] }
+            return [.up(action)]
+
+        case .gesture(.holdEnded):
             // Semantic actions are one-shot; only held bindings care about the release.
             return []
         }
@@ -289,12 +297,20 @@ public struct EventResolver: Sendable {
         }
 
         let table = overrides ?? gestureOverrides
-        guard let override = table[GestureID.of(event)], override.holdsModifiersOnly else {
-            // Either the gesture was never a held override, or it started before this table existed;
-            // there is nothing held to release.
-            return []
+        if let override = table[GestureID.of(event)] {
+            // An override owns the whole gesture: a held modifier-only one is released here, a
+            // tap-style one was sent in full on the press and has nothing to release. Either way the
+            // semantic binding underneath must not get a say — it would key-up something that never
+            // went down.
+            return override.holdsModifiersOnly ? [.raw(override.stroke, .up)] : []
         }
-        return [.raw(override.stroke, .up)]
+        // No override (or it started before this table existed). A held B-layer *action* still
+        // needs its key up; a one-shot one has nothing to release.
+        if case .gesture(.chordReleased(_, let key)) = event,
+           let action = bindings.bLayer[key], action.allowsRepeat {
+            return [.up(action)]
+        }
+        return []
     }
 
     public func triggers(for event: ResolvedEvent) -> [ActionTrigger] {

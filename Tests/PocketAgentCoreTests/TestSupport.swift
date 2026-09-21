@@ -175,11 +175,13 @@ func makeEngineRig(
     configure(&config)
     let emitter = RecordingEmitter()
     let frontmost = MutableFrontmost(frontmostBundleID)
+    let scheduler = ManualScheduler()
     let dispatcher = ActionDispatcher(
         configProvider: { config },
         frontmost: frontmost,
         emitter: emitter,
-        activator: activator
+        activator: activator,
+        scheduler: scheduler
     )
     dispatcher.menuBuilder = { bundleID in
         if let commandMenu { return commandMenu(config, bundleID) }
@@ -191,7 +193,6 @@ func makeEngineRig(
         }
     }
     let source = FakeControllerSource()
-    let scheduler = ManualScheduler()
     let engine = ControllerEngine(
         dispatcher: dispatcher,
         gestureOverrides: config.gestureOverrides(for: config.activeProfile),
