@@ -100,9 +100,20 @@ else
 	codesign --force --deep --sign - "$APP" 2>/dev/null || true
 fi
 
+# Install a copy where it can live permanently. The login item (Launch at Login) records the
+# app's path, and build/ is wiped and recreated on every build — so the copy the user actually runs
+# and registers is the one in /Applications. build/ stays as the intermediate product.
+INSTALL="${POCKETAGENT_INSTALL_DIR:-/Applications}/PocketAgentRemote.app"
+if ditto "$APP" "$INSTALL" 2>/dev/null; then
+	echo "installed: $INSTALL"
+else
+	echo "warning: could not copy to $INSTALL — run from build/ instead" >&2
+	INSTALL="$APP"
+fi
+
 echo
 echo "built:  $APP"
-echo "launch: open \"$APP\""
+echo "launch: open \"$INSTALL\""
 echo
 echo "First run:"
 echo "  1. click the controller icon in the menu bar"

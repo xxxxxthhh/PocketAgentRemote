@@ -1,9 +1,9 @@
-# 功能测试手册（2026-09-18 批次）
+# 功能测试手册
 
 > 这份手册只写**你能上手做、能用眼睛和日志判定**的事。代码怎么改的不在这里，
 > 想看去 `docs/ux-roadmap.md` §7 和 `.impl-reports/`（每张任务单的实现报告，未跟踪进 git，看完可删）。
-> 全部改动目前**未提交**，在工作树里；测完决定要不要 commit。
-> 所有新功能都只过了单元测试（292 用例全绿），**没有一项接过真手柄**——所以才需要你。
+> 09-18 批次（M1–M6）与 09-21 上午的 M7/M8 已提交；09-21 的 M9–M11（开机自启 / 权限提示 / 合盖唤醒）**已暂存未提交**，测完决定要不要 commit。
+> 所有新功能都只过了单元测试（343 用例全绿），**没有一项接过真手柄**——所以才需要你。
 
 ## 0. 这批改了什么（一句话版）
 
@@ -16,6 +16,12 @@
 | M5 | 被拦截 / 不支持 / 切换失败时，屏幕顶部弹 3 秒中文提示，以前是「按了没反应」 | ✅ | ⬜ |
 | M6 | Codex 命令菜单可切换成「四向操作盘」实验布局（默认仍是列表） | ✅ | ⬜ |
 | 文档 | README / HANDOFF 里「A 短按按下即发 Enter」改成真实语义：**松开时发** | — | — |
+| M7 | `B+A` 改成退格，按住连续删（改语音识别错字用） | ✅ | ⬜ |
+| M8 | 切换到回话慢的程序（微信）不再误报失败、不再冻住手柄 | ✅ | ⬜ |
+| M9 | 菜单栏加 `Launch at Login`，勾上就开机自启 | — | 9a/9b ✅（2026-09-21）；9c–9f ⬜ |
+| M10 | 辅助功能权限被收走时 7 秒内弹提示、菜单栏图标变警告三角；恢复时也提示 | — | ⬜ |
+| M11 | 合盖前自动松开按着的键、关菜单；开盖后手柄直接能用 | ✅ | ⬜ |
+| M12 | **通用菜单**：微信等非 agent App 里 `B+←` 弹出该 App 自己菜单栏里的操作，直接执行（2026-09-21） | ✅ | 微信快速试过 ✅；其余 ⬜ |
 
 ## 1. 准备（每次测试前）
 
@@ -27,7 +33,7 @@ swift test 2>&1 | tail -3                 # 期望 Executed N tests, with 0 fail
 
 1. **备份旧日志**：`cp ~/Library/Application\ Support/PocketAgentRemote/debug.log ~/Desktop/debug-before.log`
 2. **退出正在跑的旧实例**：菜单栏手柄图标 → Quit。别同时跑两份。
-3. `open build/PocketAgentRemote.app`，确认菜单栏出现图标，Accessibility 授权还在（菜单里能看到）。
+3. `open /Applications/PocketAgentRemote.app`（构建脚本已复制过去），确认菜单栏出现图标，Accessibility 授权还在（菜单里能看到）。
 4. 另开一个终端窗口一直挂着日志：
 
 ```bash
@@ -211,6 +217,80 @@ Claude 前台时开关无效，仍出原列表。
 
 **判定**：8a 无提示且日志是 `focused`，8b 不冻手柄。8f 找不到目标就跳过。
 
+### M9 开机自启（2026-09-21）
+
+**从 `/Applications/PocketAgentRemote.app` 启动再测**：登录项记的是 App 所在路径，`build/` 每次重建都会被删掉重建，
+所以正式用的那份放在 `/Applications`（构建脚本现在会自动复制过去）。`swift run` 起的进程没有 bundle，点了会报「开机自启打开失败」。
+实测（2026-09-21）：从未注册过时系统查到的状态是 `notFound`，App 把它当作「未注册」显示成可点的不打勾项，这是对的。
+
+| # | 怎么做 | 应该看到 | 日志 |
+|---|---|---|---|
+| 9a | 菜单栏 → 看 `Launch at Login` 那一行 | 有这一行，且没打勾 | — |
+| 9b | 点它 | 变成打勾；系统设置 → 通用 → 登录项里出现 PocketAgentRemote | `APP Launch at Login → registered (status: enabled)` |
+| 9c | 注销再登录（或重启） | 菜单栏手柄图标自己出现了 | 新一份 `debug.log`，第一行是 `APP starting …` |
+| 9d | 再点一次 `Launch at Login` | 勾没了；系统设置里的登录项也没了 | `APP Launch at Login → unregistered (status: notRegistered)` |
+| 9e | 9b 之后去系统设置把那个登录项的开关**关掉**，回来开菜单 | 那一行变成 `Launch at Login: needs approval in Settings`，**不打勾**（这是对的，不是失败）；点它会打开系统设置的登录项页 | 开菜单不写日志；这行只是状态渲染 |
+| 9f | 9b 之后重新跑一次 `./scripts/make-agent-app.sh debug`（脚本会重建 `build/` 并覆盖 `/Applications` 那份），从 `/Applications` 重启后再看菜单 | **不确定**：可能仍是打勾，也可能掉成不勾 —— 这条就是要你告诉我结果 | 若掉了，再点一次即可重新注册 |
+
+**判定**：9b/9c/9d 必须过（9c 是这个功能的全部意义）。9e 找不到开关就跳过。**9f 无论结果如何都要回填**。
+
+### M10 权限丢失提示（2026-09-21）
+
+| # | 怎么做 | 应该看到 | 日志 |
+|---|---|---|---|
+| 10a | 正常运行中，去系统设置 → 隐私与安全性 → 辅助功能，**取消勾选** PocketAgentRemote | 最多 7 秒内屏幕顶部弹「辅助功能权限已失效：按键会被系统丢弃，去设置重新勾选」；菜单栏图标从手柄变成警告三角 | `APP Accessibility → revoked` + `TOAST 辅助功能权限已失效…` |
+| 10b | 就这么放着 1 分钟别动 | **不再**重复弹提示；警告三角一直在 | 日志里只有 10a 那一条，没有新行 |
+| 10c | 鼠标悬停在菜单栏图标上 | tooltip 写明权限缺失，并且仍告诉你手柄连没连 | — |
+| 10d | 重新勾选回来 | 最多 7 秒内弹「辅助功能权限已恢复」；图标变回手柄 | `APP Accessibility → granted` + `TOAST 辅助功能权限已恢复` |
+| 10e | 先把权限取消掉，再启动 App | 启动时就弹一次「已失效」，图标是警告三角 | `APP Accessibility is NOT granted …` 紧跟一条 `TOAST …` |
+
+**判定**：10a 的 7 秒上限和 10b 的「不重复」必须过。10a 若明显超过 10 秒，告诉我，轮询间隔改小即可。
+
+### M11 合盖唤醒（2026-09-21）
+
+| # | 怎么做 | 应该看到 | 日志 |
+|---|---|---|---|
+| 11a | Codex 在前台，**按住 ←** 不放的同时合盖，10 分钟后开盖 | 输入框里没有被一直按着的左移；第一下方向键正常 | 合盖侧有 `SEND up navigateLeft`，随后 `SLEEP suspended — …` |
+| 11b | **按住 B** 不放合盖，开盖后松开 B | 没有弹出程序切换器，也没有发出 Escape | 无 `MENU app switcher opened`、无 `SEND … cancelOrInterrupt` |
+| 11c | 命令菜单（`B+←`）开着时合盖，开盖 | 浮层没有留在屏幕上 | `OUTPUT MENU closed` 在 `SLEEP` 之前 |
+| 11d | 开盖后按一下方向键 | 正常移动 | `WAKE resumed …` / `WAKE controller: …` 两行，之后是正常的 `RAW` / `GESTURE` / `SEND` |
+| 11e | 看 11d 的两条 `WAKE` 行 | 第二行写手柄连接状态；若写 `none connected`，1–3 秒后应另有一行 `DEVICE connected: …` | 蓝牙手柄回连比唤醒慢是正常的 |
+| 11f | 合盖 10 分钟后开盖，直接用手柄做一整套：方向、A、B 轻按、B+←、B 长按 | 全部正常，没有卡键、没有误触发 | — |
+
+**判定**：11a/11b/11d 必须过。11e 只是读日志，写下你看到的顺序就行。
+
+### M12 通用菜单（G4，2026-09-21）
+
+**是什么**：前台不是 Codex / Claude 时，`B+←` 不再提示「打不开菜单」，而是读出该 App **自己菜单栏**里的操作，
+过滤掉危险项和样板项后列出来，A 直接执行（通过辅助功能 API 按菜单项，不合成快捷键，所以 App 在后台也能按）。
+微信自带四条收藏排最前：`Show Next Unread Chat`、`Show Next Chat`、`Show Previous Chat`、`Search`；其余进「更多」。
+
+**收藏怎么改**：`Open Config File`，加 `"appMenuFavorites": { "com.tencent.xinWeChat": ["Show/Show Next Unread Chat", "Edit/Search"] }`，
+路径是「顶级菜单/子菜单/项」，用 `swift Tools/press-menu-item.swift com.tencent.xinWeChat list` 能看到所有路径。
+写了某个 App 就整体替换默认；写空数组 `[]` 表示该 App 不置顶。`Reload Config` 生效。
+
+| # | 怎么做 | 应该看到 | 日志 |
+|---|---|---|---|
+| 12a | 微信前台，`B+←` | 竖列表，标题「WeChat」或「Weixin」（取 App 自己报的名字），第一项 `Show Next Unread Chat`，末尾一行「更多」 | `MENU  opened app menu for com.tencent.xinWeChat with N items`，无 SEND |
+| 12b | 有未读会话时，A 执行第一项 | 微信跳到下一个未读会话；浮层关闭 | `MENU  pressing Show › Show Next Unread Chat in com.tencent.xinWeChat`，**无 SEND** |
+| 12c | ↓ 到「更多」→ A | 进入第二页竖列表：File / Show / Window 里剩下的项 | `MENU  更多 page opened with N items` |
+| 12d | 在「更多」里 B | 回到第一页；微信**没收到 Escape** | `MENU  back to WeChat`，无 SEND |
+| 12e | 第一页 B | 菜单关闭 | `MENU  closed by B` |
+| 12f | 翻遍两页 | **看不到** Quit / Exit / Lock / Close / Hide / Log Out / Minimize / Copy / Paste 这类项 | — |
+| 12g | 「更多」里选一个当前灰掉的项（比如没选中会话时的 Pin/Unpin）→ A | 顶部提示「菜单项已不可用」，菜单关闭 | `SKIP  openMenu: app menu item is disabled …` + `TOAST` |
+| 12h | Chrome 前台 `B+←` | 也能开出菜单（第一次可能慢 0.1–0.2 秒，Chrome 菜单很大） | `opened app menu for com.google.Chrome` |
+| 12i | Finder 前台 `B+←` | 能开出菜单 | 同上 |
+| 12j | Codex 前台 `B+←` | **仍是原来的命令菜单**（新建会话…），不是通用菜单 | `opened for com.openai.codex with 5 items` |
+| 12k | 开着微信菜单时用鼠标点 Chrome，再回来看 | 菜单已关；Chrome 没收到任何键 | `MENU  closed` |
+| 12l | 访达开两个窗口 A、B。在 A 里 `B+←` 开菜单 → **用鼠标点到窗口 B**（浮层还在，因为还是访达）→ A 执行任意一项 | 顶部提示「已拦截：窗口已切换，菜单项未执行」；菜单随即关闭，要重新 `B+←` | `DENY  openMenu: app menu context changed …` + `TOAST` |
+| 12n | Chrome 前台 `B+←` → ↓ 到「更多」→ A → 连按 ↓ 20 次 | 子页最多显示 8–10 行（按屏高算），不再撑满屏幕；高亮到底后列表随之滚动，标题显示 `更多 · 12/41` 之类的序号；长标题末尾省略号，不溢出右边 | 无新日志；`OVERLAY session ended: rebuild=1 …`（滚动不重建） |
+| 12m | 让某个 App 假死（例如在终端 `kill -STOP <pid>` 一个不重要的 App）后切到它前台，`B+←` | 最多约 1 秒内弹「打不开菜单：前台不是 agent」之类的提示，手柄**不卡**（读取到点后不再发消息，但一条在途消息最多再等 0.5 秒）；之后 `kill -CONT <pid>` 恢复 | `SKIP  openMenu: …`；无长时间空白 |
+
+**判定**：12a/12b/12f/12j/12l 必须过。12b 是这个功能的全部意义；12f 是安全底线（看到任何一条危险项都算失败，告诉我标题）；12l 证明菜单绑定的是「打开时的那个窗口」，换窗口不会按到别的文件/邮件上。
+危险项黑名单是按已知词表做的子串匹配，覆盖不了所有 App 所有语言：**你在任何 App 里看到能删数据 / 关窗口 / 退出登录的项，都告诉我标题**，我加进词表。
+已知限制：第二页的底部提示仍写「B 关闭」，实际是 B 返回；「更多」很长时（Chrome / Mail）列表按视口滚动（2026-09-21 修，见 12n），若仍溢出截图给我；
+有些 App 报的启用状态是陈的（访达没真正打开过菜单时 `View/Hide Path Bar` 报灰），所以一个其实能用的项可能没列出来，这是预期的，和 12f 相反方向。
+
 ## 3. 需要你做的实机 spike（代码做不了的部分）
 
 这些在 §7 里是有 time-box 的验证单，只有你有手柄和真实 App。每项都给了记录表，填完给我。
@@ -268,7 +348,9 @@ Codex 前台，用一个**可丢弃的测试会话**。四个动作各做 5 次�
 - 「已拦截：前台已切换，菜单项未执行」这条提示很难触发（浮层 0.15 s 轮询通常先把菜单关了），不在测试项里。
 - App 层（AppKit）没有测试 target，M1/M4/M5/M6 的界面行为全靠你实机。
 - 「A 短按按下即发」这一设计承诺与「长按不提交」不可兼得，代码现状是**松开才发**（最多晚 220 ms）。要不要改回「按下即发、放弃单键语音」是产品决定，不是这批的 bug。
-- F1 连走 / F2 持久 MRU / F4 取景窗 / F8 开机自启 / F9 权限提示 / F10 睡眠唤醒 / U1–U3 样式：本批未做。
+- F1 连走 / F2 持久 MRU / F4 取景窗 / U1–U3 样式：本批未做。
+- F8 开机自启 / F9 权限提示 / F10 睡眠唤醒（2026-09-21 追加）已实现，见 M9–M11；其中 F8/F9 全在 App 层，
+  一行自动化测试都没有，只有 F10 的 Core 部分有 8 个用例。
 
 ## 5. 结果回填
 
@@ -282,4 +364,7 @@ Codex 前台，用一个**可丢弃的测试会话**。四个动作各做 5 次�
 | M6 | ⬜ | |
 | M7 (7a–7h) | ⬜ | |
 | M8 (8a–8f) | ⬜ | |
+| M9 (9a–9f) | ⬜ | |
+| M10 (10a–10e) | ⬜ | |
+| M11 (11a–11f) | ⬜ | |
 | S1–S4 | ⬜ | |

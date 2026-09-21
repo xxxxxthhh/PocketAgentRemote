@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import PocketAgentCore
+import ServiceManagement
 
 /// Supplies the frontmost application to the guard, live.
 final class FrontmostAppObserver: FrontmostAppProviding {
@@ -44,6 +45,22 @@ final class AppEnvironment {
     }
     /// Running apps in recency order, for the app switcher (hold B).
     let runningApps = RunningAppsTracker()
+
+    /// Sleep/wake observers, kept so `stop()` can take them down again.
+    private var workspaceObservers: [NSObjectProtocol] = []
+
+    /// F9. How often the Accessibility grant is re-read.
+    ///
+    /// There is no notification for losing it — it is revoked in System Settings, by a re-sign, or
+    /// by a system update, and this process is told nothing — so polling is the only way to notice
+    /// before the user does. Seven seconds is the middle of the card's 5–10 s window: the failure it
+    /// catches (every keystroke silently dropped) is worth a cheap `AXIsProcessTrusted()` that often.
+    private static let accessibilityPollInterval: TimeInterval = 7
+    private var accessibilityTimer: Timer?
+
+    /// The two F9 notices. Written once so the startup case and the revoke case cannot drift apart.
+    private static let accessibilityLostMessage = "辅助功能权限已失效：按键会被系统丢弃，去设置重新勾选"
+    private static let accessibilityRestoredMessage = "辅助功能权限已恢复"
 
     private(set) var connectedDevice: String?
     private(set) var isAccessibilityGranted: Bool
@@ -154,6 +171,7 @@ final class AppEnvironment {
         // nothing would look identical to a press that was never recognised.
         dispatcher.onActivation = { [weak self] action, outcome in
             guard let self else { return }
+            guard !self.isSuppressingLateActivation(action.rawValue, outcome) else { return }
             self.debugLog.append("FOCUS", "\(action.rawValue): \(AppActivationReport.describe(outcome))")
             self.lastActivationSummary = AppActivationReport.describe(outcome)
             // Only failures are shown. A successful switch is self-evident — the other app is now in
@@ -194,6 +212,21 @@ final class AppEnvironment {
                 RunningApp(bundleID: app.bundleID, name: pair.name(for: app.bundleID) ?? app.name)
             }
             return AppSwitcherBuilder.menu(apps: apps, frontmostBundleID: bundleID)
+        }
+        // G4: when the app in front is not an agent there is no command menu, and the dispatcher
+        // falls back to that app's own menu bar — read live through Accessibility, filtered by the
+        // builder, pressed through Accessibility too. Nothing here synthesises a shortcut.
+        dispatcher.appMenuReader = AccessibilityMenuReader()
+        dispatcher.appMenuBuilder = { [weak self] bundleID, entries in
+            guard let self else { return nil }
+            return AppMenuBuilder.menu(
+                entries: entries,
+                bundleID: bundleID,
+                // The app's own localized name, which is what its menu bar says — the bundle ID is
+                // only a header of last resort.
+                appName: self.frontmostObserver.frontmostAppName() ?? bundleID ?? "前台程序",
+                favorites: self.configStore.config.appMenuFavorites(for: bundleID)
+            )
         }
         // F3: a selection move republishes the *same* menu with a new highlight, and rebuilding the
         // whole panel for that made moving through a 17-app strip cost 17 view rebuilds, a fresh
@@ -270,14 +303,101 @@ final class AppEnvironment {
         }
         if !isAccessibilityGranted {
             debugLog.append("APP", "Accessibility is NOT granted — keystrokes will be dropped by the OS")
+            // Launching without it is the same fact as losing it, so it says the same thing. The
+            // menu bar badge below says it again, permanently, for after the toast has gone.
+            showFailure(Self.accessibilityLostMessage)
         }
         debugLog.append("APP", "Input Monitoring: \(inputMonitoringState.rawValue) — only the generic C variant needs it")
         engine.start()
+        observeSleepWake()
+        startAccessibilityPolling()
     }
 
     func stop() {
+        accessibilityTimer?.invalidate()
+        accessibilityTimer = nil
+        for observer in workspaceObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+        workspaceObservers.removeAll()
         engine.stop()
         overlay.hide()
+    }
+
+    // MARK: - Sleep / wake
+
+    /// F10. These are `NSWorkspace`'s notifications, not `NotificationCenter.default`'s — the
+    /// distributed ones are the only place `willSleep` / `didWake` are posted.
+    ///
+    /// Cleaning up on the way *in* is the point: a direction that is down when the lid closes stays
+    /// down in the target application for the whole sleep, and waiting for the wake to notice is
+    /// exactly the failure this is for.
+    private func observeSleepWake() {
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers.append(center.addObserver(
+            forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.handleWillSleep() })
+        workspaceObservers.append(center.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.handleDidWake() })
+    }
+
+    private func handleWillSleep() {
+        engine.suspend()
+        // `suspend()` already took the menu down through `onMenuChanged`; these two cover the
+        // screen-side leftovers that have no menu session behind them — a toast counting down, and
+        // an overlay that outlived its session.
+        overlay.hide()
+        failureToast.hide()
+        debugLog.append("SLEEP", "suspended — keys released, gesture and menu state cleared")
+    }
+
+    private func handleDidWake() {
+        engine.resume()
+        // Accessibility and Input Monitoring survive a sleep, but a system update installed during
+        // one does not: re-reading is what makes a revoked grant visible without a relaunch.
+        refreshAccessibility()
+        debugLog.append("WAKE", "resumed — gesture state clean, permissions re-read")
+        debugLog.append("WAKE", "controller: \(connectedDevice ?? "none connected")")
+    }
+
+    /// The longest an activation can honestly take: `AppActivator` gives the first method
+    /// `defaultVerificationTimeout` and the fallback `defaultFallbackTimeout`, both measured on a
+    /// wall clock, and this app builds its activator with exactly those defaults. The multiplier is
+    /// slack for a busy main queue — the answer this is separating out is minutes late, not seconds.
+    private static let activationSanityBudgetMs = Int(
+        (AppActivator.defaultVerificationTimeout + AppActivator.defaultFallbackTimeout) * 3 * 1000
+    )
+
+    /// True when an activation answer belongs to a request the machine slept through.
+    ///
+    /// Two ways to tell, and both are needed. The obvious one is that we are still asleep. The one
+    /// that actually fires is the second: `AppActivator` measures its timeouts on a **wall** clock
+    /// and schedules its poll on a **mach** one (which does not tick during sleep), so a switch that
+    /// was in flight when the lid closed does not answer during the sleep at all — it answers about
+    /// a second *after* the wake, having failed the first method on "the frontmost app did not
+    /// change within 4000 ms" and then run the fallback's full budget. By then `resume()` has
+    /// already cleared `isSuspended`. What gives it away is `elapsedMs`: it is wall-clock, and the
+    /// activator cannot legitimately produce one past its own budget.
+    ///
+    /// Either way it is logged — a swallowed answer with no trace is worse — but it raises no toast
+    /// and moves no state the menu shows, success or failure: it is about a moment the user is no
+    /// longer in.
+    ///
+    /// Blind spot, deliberately left: a sleep shorter than the budget is indistinguishable from a
+    /// slow switch, so it still reports. That is the right way round — a five-second nap and a slow
+    /// WeChat look the same to the user too.
+    private func isSuppressingLateActivation(_ label: String, _ outcome: AppActivationOutcome) -> Bool {
+        let reason: String
+        if engine.isSuspended {
+            reason = "answered while asleep"
+        } else if outcome.elapsedMs > Self.activationSanityBudgetMs {
+            reason = "took \(outcome.elapsedMs) ms — a sleep happened in the middle"
+        } else {
+            return false
+        }
+        debugLog.append("FOCUS", "\(label): \(reason), ignored — \(AppActivationReport.describe(outcome))")
+        return true
     }
 
     // MARK: - Menu actions
@@ -297,6 +417,7 @@ final class AppEnvironment {
         }
         activator.activate(bundleID: target) { [weak self] outcome in
             guard let self else { return }
+            guard !self.isSuppressingLateActivation("manual", outcome) else { return }
             self.lastActivationSummary = AppActivationReport.describe(outcome)
             self.debugLog.append("FOCUS", "manual: \(self.lastActivationSummary ?? "")")
             // This path calls the activator directly, so it never reaches `dispatcher.onActivation`
@@ -327,6 +448,11 @@ final class AppEnvironment {
         if reason.contains("menu item refused") {
             return "已拦截：前台已切换，菜单项未执行"
         }
+        // G4 v2: the app never changed, the window did — and 「前台已切换」 would be a lie the user
+        // could check against their own screen.
+        if reason.contains("app menu context changed") {
+            return "已拦截：窗口已切换，菜单项未执行"
+        }
         if reason.contains("requires an explicit profile") {
             return "已拦截：当前是通用模式，工具专属动作不发送"
         }
@@ -345,6 +471,25 @@ final class AppEnvironment {
     /// "<工具> 不支持：…" for an adapter gap, and a plain reason for the environmental refusals
     /// that now arrive on the same hook.
     private func unsupportedMessage(_ action: AgentAction, _ reason: String) -> String {
+        // G4: the row was shown, so the user is owed the reason it did not run. The item's own state
+        // and the app's are told apart, because "greyed out" is normal and "no answer" is not.
+        if action == .openMenu {
+            if reason.contains("app menu item is disabled") {
+                return "菜单项已不可用"
+            }
+            if reason.contains("app menu item no longer exists") {
+                return "找不到该菜单项"
+            }
+            if reason.contains("app menu unavailable") || reason.contains("app menu press failed") {
+                return "App 未响应"
+            }
+            if reason.contains("app menu reader unavailable") {
+                return "打不开菜单：本次构建未接入通用菜单"
+            }
+            if reason.contains("the frontmost app is unknown") {
+                return "打不开菜单：读不到前台程序"
+            }
+        }
         if reason.contains("no agent in front") {
             return "打不开菜单：前台不是 agent"
         }
@@ -495,13 +640,48 @@ final class AppEnvironment {
     }
 
     func refreshAccessibility() {
-        let granted = AccessibilityPermission.isGranted
-        if granted != isAccessibilityGranted {
-            isAccessibilityGranted = granted
-            debugLog.append("APP", "Accessibility → \(granted ? "granted" : "revoked")")
-        }
+        noteAccessibilityChange()
         inputMonitoringState = InputMonitoringPermission.state
         onStatusChange?()
+    }
+
+    /// F9. Re-reads the grant and announces a **transition**, once. Returns whether it moved.
+    ///
+    /// Only the two edges do anything: granted → revoked raises the notice and badges the menu bar,
+    /// revoked → granted takes both back. Staying revoked says nothing further — the badge is the
+    /// standing reminder, and a toast every seven seconds would be the nagging the card rules out.
+    ///
+    /// Every entry point shares this: the poll, the menu opening, and the wake. Which one noticed
+    /// does not change what the user is told.
+    @discardableResult
+    private func noteAccessibilityChange() -> Bool {
+        let granted = AccessibilityPermission.isGranted
+        guard granted != isAccessibilityGranted else { return false }
+        isAccessibilityGranted = granted
+        debugLog.append("APP", "Accessibility → \(granted ? "granted" : "revoked")")
+        // Deliberately the same display path as a refused keystroke: one toast, one place, so a
+        // permission notice cannot end up looking like a different kind of message.
+        showFailure(granted ? Self.accessibilityRestoredMessage : Self.accessibilityLostMessage)
+        return true
+    }
+
+    /// F9's timer. Deliberately narrower than `refreshAccessibility()`: it reads **only** the
+    /// Accessibility grant.
+    ///
+    /// Input Monitoring is left out because it is not a required permission — only the generic C
+    /// controller variant needs it, so the menu reports it and nothing chases it. And nothing is
+    /// published when nothing changed: the status item would otherwise be rebuilt every seven
+    /// seconds for a picture that is already correct.
+    private func startAccessibilityPolling() {
+        let timer = Timer(timeInterval: Self.accessibilityPollInterval, repeats: true) { [weak self] _ in
+            guard let self, self.noteAccessibilityChange() else { return }
+            self.onStatusChange?()
+        }
+        // `.common`, not the default mode: a timer in the default mode stops while a menu is open
+        // or a window is being dragged, which is exactly when the user is looking at the thing this
+        // keeps up to date.
+        RunLoop.main.add(timer, forMode: .common)
+        accessibilityTimer = timer
     }
 
     func requestInputMonitoring() {
@@ -525,6 +705,59 @@ final class AppEnvironment {
     func openAccessibilitySettings() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
         NSWorkspace.shared.open(url)
+    }
+
+    // MARK: - Launch at login (F8)
+
+    /// The login-item registration, read straight from the system every time.
+    ///
+    /// Deliberately not mirrored into config or into a stored flag: the user can turn this off in
+    /// System Settings without telling us, and a cached checkbox would then be lying. It is also
+    /// the reason `.requiresApproval` is a state the menu has to draw — `register()` can succeed
+    /// and still leave the item switched off on the other side.
+    var launchAtLoginStatus: SMAppService.Status { SMAppService.mainApp.status }
+
+    /// Registers or unregisters **the bundle this process is running from**.
+    ///
+    /// So it only means anything inside a real `.app` bundle; a `swift run` process has no bundle
+    /// to register and `register()` throws. Note `.notFound` is *also* what a never-registered
+    /// bundle reports on macOS 27 (measured 2026-09-21), so it is not a reliable "no bundle" signal.
+    func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            // The resulting status, not the requested one: registering while the item is switched
+            // off in System Settings succeeds and stays `requiresApproval`, and that line is the
+            // only thing that explains why the checkbox did not come on.
+            debugLog.append(
+                "APP",
+                "Launch at Login → \(enabled ? "registered" : "unregistered") (status: \(Self.describe(launchAtLoginStatus)))"
+            )
+        } catch {
+            debugLog.append(
+                "APP",
+                "Launch at Login \(enabled ? "register" : "unregister") failed: \(error.localizedDescription)"
+            )
+            showFailure("开机自启\(enabled ? "打开" : "关闭")失败（\(error.localizedDescription)）")
+        }
+        onStatusChange?()
+    }
+
+    func openLoginItemsSettings() {
+        SMAppService.openSystemSettingsLoginItems()
+    }
+
+    private static func describe(_ status: SMAppService.Status) -> String {
+        switch status {
+        case .enabled: return "enabled"
+        case .notRegistered: return "notRegistered"
+        case .requiresApproval: return "requiresApproval"
+        case .notFound: return "notFound"
+        @unknown default: return "unknown(\(status.rawValue))"
+        }
     }
 
     func openConfigFile() {

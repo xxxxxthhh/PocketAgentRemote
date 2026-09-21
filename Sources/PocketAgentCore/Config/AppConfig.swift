@@ -64,6 +64,14 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// over the global `gestureKeyOverrides`.
     public var profileGestureKeyOverrides: [String: [String: KeyBinding]]
 
+    /// Which of an app's own menu-bar items 「通用菜单」 pins to the top, keyed by bundle ID.
+    ///
+    /// Each value is a list of `AppMenuEntry.pathKey`s (`"Show/Show Next Unread Chat"`) in the
+    /// order the user wants to see them. The menu bar is read live, so an entry that no longer
+    /// matches is simply not pinned — and the destructive filter still applies, because collecting
+    /// a row does not make `Quit` safe to leave under the highlight.
+    public var appMenuFavorites: [String: [String]]
+
     /// The two agents the "switch agent" gesture toggles between.
     ///
     /// Both fields are optional so a partially written config still decodes — a missing side falls
@@ -203,7 +211,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         allowedBundleIDs: [String] = AppConfig.defaultAllowedBundleIDs,
         actionKeyOverrides: [String: KeyBinding] = [:],
         gestureKeyOverrides: [String: KeyBinding] = [:],
-        profileGestureKeyOverrides: [String: [String: KeyBinding]] = [:]
+        profileGestureKeyOverrides: [String: [String: KeyBinding]] = [:],
+        appMenuFavorites: [String: [String]] = [:]
     ) {
         self.version = version
         self.activeProfile = activeProfile
@@ -219,6 +228,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         self.actionKeyOverrides = actionKeyOverrides
         self.gestureKeyOverrides = gestureKeyOverrides
         self.profileGestureKeyOverrides = profileGestureKeyOverrides
+        self.appMenuFavorites = appMenuFavorites
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -226,6 +236,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case tapMaxMs, holdMs
         case macrosEnabled, requireAllowedFrontmostApp, allowedBundleIDs
         case actionKeyOverrides, gestureKeyOverrides, profileGestureKeyOverrides
+        case appMenuFavorites
     }
 
     /// Tolerant decoding: **every** field falls back to its default when absent.
@@ -258,6 +269,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
             [String: [String: KeyBinding]].self,
             forKey: .profileGestureKeyOverrides
         ) ?? [:]
+        appMenuFavorites = try container.decodeIfPresent([String: [String]].self, forKey: .appMenuFavorites) ?? [:]
     }
 
     public static let currentVersion = 1
@@ -277,6 +289,21 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public static let defaultAutoProfileBundleIDs = [
         "com.openai.codex": ToolProfile.codex.rawValue,
         "com.anthropic.claudefordesktop": ToolProfile.claudeCode.rawValue,
+    ]
+
+    /// Menu-bar favourites that ship without appearing in the config file.
+    ///
+    /// Same shape of default as `defaultGestureOverrides`: it exists so the feature is useful on
+    /// first launch instead of after a hand-edit. WeChat is the app 「通用菜单」 was built for, and
+    /// these four are the rows that survived the real-device pass — walking unread chats, walking
+    /// chats, and search.
+    public static let defaultAppMenuFavorites: [String: [String]] = [
+        "com.tencent.xinWeChat": [
+            "Show/Show Next Unread Chat",
+            "Show/Show Next Chat",
+            "Show/Show Previous Chat",
+            "Edit/Search",
+        ],
     ]
 
     /// The profile in force right now.
@@ -359,6 +386,16 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// on top.
     public func gestureOverrides(for profile: ToolProfile) -> [String: GestureOverride] {
         resolvedGestureOverrides(profile: profile)
+    }
+
+    /// The 「通用菜单」 favourites in force for an app.
+    ///
+    /// Merged per **bundle ID**, not per entry: naming an app in the config replaces its built-in
+    /// list outright, so `"com.tencent.xinWeChat": []` is how a user says "pin nothing here" —
+    /// which a per-entry merge could not express.
+    public func appMenuFavorites(for bundleID: String?) -> [String] {
+        guard let bundleID else { return [] }
+        return appMenuFavorites[bundleID] ?? Self.defaultAppMenuFavorites[bundleID] ?? []
     }
 
     /// Bindings that ship enabled without appearing in the config file.

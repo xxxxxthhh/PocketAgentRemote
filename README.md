@@ -27,6 +27,8 @@
 | 什么都不按 | profile 跟着前台 App 自动切；切到浏览器就只剩方向键和 Enter / Esc |
 | 按了没反应 | 屏幕顶部弹 3 秒中文提示告诉你为什么（被拦、不支持、切换失败） |
 | 手柄不在手边 | 菜单栏 → `Show Controller Menu` / `Show App Switcher` 是同一套菜单 |
+| 在微信 / 浏览器 / 访达里按 B + ← | 弹出**那个 App 自己菜单栏**里的操作，A 直接执行；微信默认把「下一个未读会话」「搜索」放最前。危险项（退出、关闭、删除…）永远不列出 |
+| 合盖、重启、权限被收走 | 醒来接着用，不会卡键；开机自动启动（菜单栏里可关）；辅助功能权限掉了屏幕会提示、菜单栏图标变警告 |
 
 实验中、默认关闭：Codex 命令菜单可切成**四向操作盘**（方向直选，见「手柄菜单」）。
 
@@ -36,7 +38,7 @@
 
 ```bash
 ./scripts/make-agent-app.sh release     # 构建 build/PocketAgentRemote.app
-open build/PocketAgentRemote.app        # 启动（菜单栏出现手柄图标）
+open /Applications/PocketAgentRemote.app   # 启动（脚本已把包复制到 /Applications；菜单栏出现手柄图标）
 ```
 
 然后：
@@ -383,7 +385,6 @@ chord       b.up · b.down · b.left · b.right · b.a
 - **跨 App 切换依赖 AppleScript**：进程内的 `activate()` / AX / 合成 `⌘⇥` 在本机实测全部无效，
   所以 `Info.plist` 里的 `NSAppleEventsUsageDescription` 是必需的。若将来系统改规则，
   日志会打印实际生效的方法（`via appleScript`）以及全部失败原因。
-- **没有开机自启**（可选功能，未实现）。
 - **A 轻按的 Enter 在松开时才发**（最多晚 220 ms）：因为要等到松开才知道这次是短按还是按住说话。
   想要「按下即发」就得放弃单键语音，这是取舍不是 bug。
 - **屏幕提示不能手动关**，只能等 3 秒；也不弹成功提示。

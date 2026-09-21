@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import PocketAgentCore
+import ServiceManagement
 
 /// The menu bar item and its menu (spec §17).
 final class MenuBarController: NSObject, NSMenuDelegate {
@@ -13,7 +14,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
-        statusItem.button?.image = Self.symbol(connected: false)
+        statusItem.button?.image = Self.symbol(connected: false, accessibilityGranted: environment.isAccessibilityGranted)
         statusItem.button?.imagePosition = .imageLeading
         statusItem.menu = NSMenu()
         statusItem.menu?.delegate = self
@@ -22,7 +23,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         refreshStatusItem()
     }
 
-    private static func symbol(connected: Bool) -> NSImage? {
+    /// F9: the permission outranks the connection. Without Accessibility every keystroke this app
+    /// sends is dropped by the OS, so a controller that is connected and working the whole time
+    /// still does nothing — and a filled game controller saying "connected" would be a lie about
+    /// the only thing the user cares about.
+    ///
+    /// `gamecontroller.badge.exclamationmark` does not exist on this system (checked), so the badge
+    /// replaces the glyph rather than decorating it.
+    private static func symbol(connected: Bool, accessibilityGranted: Bool) -> NSImage? {
+        guard accessibilityGranted else {
+            let image = NSImage(
+                systemSymbolName: "exclamationmark.triangle.fill",
+                accessibilityDescription: "Accessibility permission required")
+            image?.isTemplate = true
+            return image
+        }
         let name = connected ? "gamecontroller.fill" : "gamecontroller"
         let image = NSImage(systemSymbolName: name, accessibilityDescription: connected ? "Controller connected" : "Controller disconnected")
         image?.isTemplate = true
@@ -31,10 +46,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func refreshStatusItem() {
         let connected = environment.connectedDevice != nil
-        statusItem.button?.image = Self.symbol(connected: connected)
-        statusItem.button?.toolTip = connected
+        let granted = environment.isAccessibilityGranted
+        statusItem.button?.image = Self.symbol(connected: connected, accessibilityGranted: granted)
+        let controller = connected
             ? "\(environment.connectedDevice ?? "controller") — \(environment.activeProfile.rawValue)"
             : "No controller connected"
+        // The controller line stays in the badged tooltip: losing the permission must not also cost
+        // the user the one readout that says whether the hardware is there.
+        statusItem.button?.toolTip = granted
+            ? controller
+            : "Accessibility permission required — keystrokes are dropped (\(controller))"
     }
 
     // MARK: - Menu
@@ -127,6 +148,33 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             let item = NSMenuItem(title: "Input Monitoring: not determined (needed only for the generic C variant)", action: #selector(requestInputMonitoring), keyEquivalent: "")
             item.target = self
             menu.addItem(item)
+        }
+
+        // Launch at login (F8). Nothing is stored on our side, so all four states are drawn from
+        // whatever `SMAppService` says right now — including the two the user can only fix in
+        // System Settings.
+        switch environment.launchAtLoginStatus {
+        case .enabled, .notRegistered, .notFound:
+            // `.notFound` is in the clickable set on purpose. Measured on macOS 27 (2026-09-21): an
+            // app that has never been registered reports `.notFound`, not `.notRegistered`, and
+            // `register()` from that state succeeds and moves it to `.enabled`. Drawing it as
+            // "bundle not found" made the feature unreachable. A process with no real bundle
+            // (`swift run`) also reports `.notFound`; there `register()` throws and the failure is
+            // shown, which is the right outcome for that case too.
+            let item = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+            item.target = self
+            item.state = environment.launchAtLoginStatus == .enabled ? .on : .off
+            menu.addItem(item)
+        case .requiresApproval:
+            // Registered, but switched off in Settings. Toggling here cannot fix it, so the row
+            // goes where it can be fixed instead.
+            let item = NSMenuItem(
+                title: "Launch at Login: needs approval in Settings",
+                action: #selector(openLoginItems), keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        @unknown default:
+            menu.addItem(disabled("Launch at Login: unknown state (\(environment.launchAtLoginStatus.rawValue))"))
         }
 
         // Safety switches
@@ -225,6 +273,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func toggleAllowlist() {
         environment.setRequireAllowedFrontmostApp(!environment.configStore.config.requireAllowedFrontmostApp)
+    }
+
+    /// Reads the live status rather than a remembered checkbox: the item can be turned off in
+    /// System Settings without this process hearing about it.
+    @objc private func toggleLaunchAtLogin() {
+        environment.setLaunchAtLogin(environment.launchAtLoginStatus != .enabled)
+    }
+
+    @objc private func openLoginItems() {
+        environment.openLoginItemsSettings()
     }
 
     @objc private func openAccessibility() {

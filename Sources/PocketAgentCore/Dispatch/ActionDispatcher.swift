@@ -36,6 +36,12 @@ public final class ActionDispatcher: ActionDispatching {
     /// Builds the app-switcher strip for the current frontmost app. Injected for the same reason:
     /// only the app layer can list running applications.
     public var switcherBuilder: ((String?) -> AgentMenu?)?
+    /// Reads and presses the **frontmost app's own** menu bar (G4 通用菜单). Injected like the
+    /// builders, for the same reason: Core does not talk to Accessibility itself.
+    public var appMenuReader: AppMenuReading?
+    /// Turns what the reader found into a menu. Kept apart from `appMenuReader` because the
+    /// filtering, the favourites and the labels live in config, not in the reader.
+    public var appMenuBuilder: ((String?, [AppMenuEntry]) -> AgentMenu?)?
 
     /// A cross-app focus ran (successfully or not), with a human-readable outcome.
     ///
@@ -74,11 +80,20 @@ public final class ActionDispatcher: ActionDispatching {
         var menu: AgentMenu
         /// The app the menu was built for. A choice is refused if focus has moved on since.
         let bundleID: String?
-        /// The page to go back to, when the dial's 「更多」 turned to a second page.
+        /// The page to go back to, when a 「更多」 row turned to a second page (dial or list).
         ///
-        /// One slot, not a stack: the dial is root plus one level, and a general navigation stack
-        /// would be a framework for a shape that does not exist yet.
+        /// One slot, not a stack: every menu here is root plus one level — the dial's page, and the
+        /// general app menu's — and a navigation stack would be a framework for a shape that does
+        /// not exist yet.
         var parent: AgentMenu?
+        /// The open `AppMenuSession` a general menu's rows were read from (G4 v2), or nil for the
+        /// command menu and the switcher.
+        ///
+        /// Held for the whole session, sub-page included: a row is pressed by **element**, through
+        /// the session it was read from, so re-opening a session at press time would be exactly the
+        /// re-lookup-by-title that v2 removed. It is also what re-checks the process and the focused
+        /// window before pressing, which the dispatcher's own bundle-ID check cannot do.
+        var appMenu: AppMenuSession?
     }
 
     public init(
@@ -164,44 +179,24 @@ public final class ActionDispatcher: ActionDispatching {
                 onMenuChanged?(session.menu)
                 return .handled
             }
-            if event.button == .a {
-                guard let item = session.menu.selectedItem else {
-                    // Nothing armed yet: A is swallowed. Deliberately *no* publish — republishing
-                    // would redraw the panel and reset the recognizer for an event that changed
-                    // nothing — and deliberately no close, so a stray A does not cost the menu.
-                    menuSession = session
-                    return .handled
-                }
-                if let page = item.submenu {
-                    // A page turn, not a choice: it runs nothing, so it does not go through
-                    // `executeSelectedMenuItem` and the frontmost re-check does not apply to it.
-                    // The check still guards whatever the user finally picks on the page.
-                    session.parent = session.menu
-                    session.menu = AgentMenu(
-                        bundleID: session.menu.bundleID,
-                        title: page.title,
-                        items: page.items,
-                        layout: .list
-                    )
-                    menuSession = session
-                    onMenuChanged?(session.menu)
-                    onDiagnostic?("MENU  \(page.title) page opened with \(page.items.count) items")
-                    return .handled
-                }
+            if event.button == .a, session.menu.selectedItem == nil {
+                // Nothing armed yet: A is swallowed. Deliberately *no* publish — republishing
+                // would redraw the panel and reset the recognizer for an event that changed
+                // nothing — and deliberately no close, so a stray A does not cost the menu.
                 menuSession = session
-                return executeSelectedMenuItem(config: configProvider())
+                return .handled
             }
         }
 
-        // B on a sub-page goes back to the dial rather than closing: the page was a detour, and
-        // closing here would make 「更多」 a one-way door.
+        // B on a sub-page goes back to the page above rather than closing: the page was a detour,
+        // and closing here would make 「更多」 a one-way door. Only the root's B closes the menu.
         if event.button == .b, var parent = session.parent {
             parent.clearSelection()
             session.menu = parent
             session.parent = nil
             menuSession = session
             onMenuChanged?(session.menu)
-            onDiagnostic?("MENU  back to the dial")
+            onDiagnostic?("MENU  back to \(parent.layout == .dial ? "the dial" : parent.title)")
             return .handled
         }
 
@@ -217,6 +212,23 @@ public final class ActionDispatcher: ActionDispatching {
         case (.right, .strip):
             session.menu.moveSelection(by: 1)
         case (.a, _):
+            if let page = session.menu.selectedItem?.submenu {
+                // A page turn, not a choice: it runs nothing, so it does not go through
+                // `executeSelectedMenuItem` and the frontmost re-check does not apply to it. The
+                // check still guards whatever the user finally picks on the page. Shared by every
+                // layout — 「更多」 arrived on the dial, but a generic app menu needs it on a list.
+                session.parent = session.menu
+                session.menu = AgentMenu(
+                    bundleID: session.menu.bundleID,
+                    title: page.title,
+                    items: page.items,
+                    layout: .list
+                )
+                menuSession = session
+                onMenuChanged?(session.menu)
+                onDiagnostic?("MENU  \(page.title) page opened with \(page.items.count) items")
+                return .handled
+            }
             menuSession = session
             return executeSelectedMenuItem(config: configProvider())
         case (.b, _):
@@ -252,9 +264,18 @@ public final class ActionDispatcher: ActionDispatching {
             onMenuChanged?(nil)
             let reason = "frontmost app changed (\(session.bundleID ?? "unknown") → \(currentBundleID ?? "unknown")); menu item refused: \(item.title)"
             // Structured rather than a bare diagnostic, so the app can *show* the refusal instead of
-            // the user pressing A and seeing nothing happen. A switcher row has no action of its
-            // own, so it is reported as the switcher's — `nil` stays reserved for raw overrides.
-            onDenied?(item.action ?? .openAppSwitcher, reason)
+            // the user pressing A and seeing nothing happen. A row without an action of its own is
+            // reported as the menu it came from — the switcher, or the general app menu — so the log
+            // names something the user actually did; `nil` stays reserved for raw overrides.
+            let refusedAs: AgentAction
+            if let action = item.action {
+                refusedAs = action
+            } else if case .pressAppMenuItem = item.choice {
+                refusedAs = .openMenu
+            } else {
+                refusedAs = .openAppSwitcher
+            }
+            onDenied?(refusedAs, reason)
             return .refused(reason)
         }
 
@@ -267,11 +288,59 @@ public final class ActionDispatcher: ActionDispatching {
         case .run(let action):
             return run(action, title: item.title, currentBundleID: currentBundleID, config: config)
         case .openSubmenu:
-            // Unreachable: the dial branch in `handleMenuEvent` turns pages itself and never gets
-            // here. Guarded rather than assumed, because a page turn must never be reported as a
-            // choice that ran.
+            // Unreachable: `handleMenuEvent` turns pages itself and never gets here. Guarded rather
+            // than assumed, because a page turn must never be reported as a choice that ran.
             return .ignored
+        case .pressAppMenuItem(let id, let path):
+            return pressAppMenuItem(id: id, path: path, appMenu: session.appMenu)
         }
+    }
+
+    /// A generic app-menu row (G4): pressed in the app's own menu bar through Accessibility.
+    ///
+    /// No adapter, no recipe and no guard — nothing is injected at all, and no shortcut is
+    /// synthesised from the item's accelerator — so the only authorisation that applies is the
+    /// frontmost re-check the caller has already done. Everything that is not a press is reported
+    /// through `onUnsupported`, because a greyed-out or vanished item is exactly the case where the
+    /// user presses A and sees nothing happen.
+    ///
+    /// `.executed(.openMenu)` for everything the user can act on, and `.refused` only when the
+    /// context moved under the menu — the same shape as the frontmost re-check above, because to the
+    /// user it is the same event: the row was for a situation that no longer exists.
+    ///
+    /// `id`, not `path`: the row presses the very element that was read (v2). `path` is display —
+    /// the log line and the reason strings — and pressing never falls back to it.
+    private func pressAppMenuItem(id: Int, path: [String], appMenu: AppMenuSession?) -> MenuEventResult {
+        let display = path.joined(separator: " › ")
+        guard let appMenu else {
+            // Unreachable: these rows only exist on a menu built from a session, and the session
+            // travels with it. Reported rather than ignored — a row that does nothing in silence is
+            // the failure this hook exists for.
+            onUnsupported?(.openMenu, "app menu session is gone; cannot press \(display)")
+            return .executed(.openMenu)
+        }
+        onDiagnostic?("MENU  pressing \(display) in \(appMenu.bundleID)")
+        switch appMenu.press(id: id) {
+        case .pressed:
+            break
+        case .contextChanged:
+            // Not a failure of the item: the app is fine and the row was real, but the window the
+            // user chose it for is not the one in front any more. Denied rather than unsupported,
+            // so it reads as "blocked" next to the frontmost-app refusal it is the finer-grained
+            // twin of (安全复审 P2).
+            let reason = "app menu context changed: the focused window is not the one the menu was opened for (\(display))"
+            onDenied?(.openMenu, reason)
+            return .refused(reason)
+        case .disabled:
+            onUnsupported?(.openMenu, "app menu item is disabled right now: \(display)")
+        case .notFound:
+            onUnsupported?(.openMenu, "app menu item no longer exists: \(display)")
+        case .appUnavailable:
+            onUnsupported?(.openMenu, "app menu unavailable: \(appMenu.bundleID) did not answer")
+        case .failed(let why):
+            onUnsupported?(.openMenu, "app menu press failed: \(display) (\(why))")
+        }
+        return .executed(.openMenu)
     }
 
     /// An app-switcher row: raise the app, send it nothing. Same path and same reporting as
@@ -332,10 +401,25 @@ public final class ActionDispatcher: ActionDispatching {
             onDiagnostic?("MENU  open ignored: a menu is already open")
             return true
         }
-        guard let menu = menuBuilder?(frontmostBundleID) else { return false }
-        menuSession = MenuSession(menu: menu, bundleID: frontmostBundleID, parent: nil)
+        if let menu = menuBuilder?(frontmostBundleID) {
+            menuSession = MenuSession(menu: menu, bundleID: frontmostBundleID, parent: nil)
+            onMenuChanged?(menu)
+            onDiagnostic?("MENU  opened for \(frontmostBundleID ?? "?") with \(menu.items.count) items")
+            return true
+        }
+
+        // Not an agent, so there is no command menu — but the app in front has a menu bar of its
+        // own, and that is what G4 offers instead of 「前台不是 agent」. Reading it is deliberately
+        // **not** gated on the allowlist: reading sends the app nothing. The frontmost re-check
+        // before a row runs is what keeps the press itself honest.
+        guard let bundleID = frontmostBundleID,
+              let appMenu = appMenuReader?.openSession(bundleID: bundleID),
+              !appMenu.entries.isEmpty,
+              let menu = appMenuBuilder?(bundleID, appMenu.entries)
+        else { return false }
+        menuSession = MenuSession(menu: menu, bundleID: bundleID, parent: nil, appMenu: appMenu)
         onMenuChanged?(menu)
-        onDiagnostic?("MENU  opened for \(frontmostBundleID ?? "?") with \(menu.items.count) items")
+        onDiagnostic?("MENU  opened app menu for \(bundleID) with \(menu.items.count) items")
         return true
     }
 

@@ -91,6 +91,13 @@ public final class ControllerEngine {
     /// discarded here rather than by a general "nothing in flight" rule, which misfired on real input.
     private var isDetaching = false
 
+    /// True between `suspend()` and `resume()` — the machine is going to sleep, or is asleep.
+    ///
+    /// Public because the app layer has to know it: an activation request that was still in flight
+    /// when the lid closed answers on the other side of the sleep, and that late answer must not
+    /// raise a toast or move any state the menu shows.
+    public private(set) var isSuspended = false
+
     /// Whether a held A is a gesture (push-to-talk) rather than a one-shot submit.
     ///
     /// Driven by the resolved override table, so it follows a config reload and a profile switch:
@@ -148,6 +155,15 @@ public final class ControllerEngine {
             guard let self else { return }
             self.onRawEvent?(event)
 
+            // Suspended: the machine is on its way into sleep. Whatever arrives now is the tail of
+            // a press that started before the lid closed, or a device on its way out — feeding it
+            // to the recognizer would re-arm exactly the state `suspend()` just cleared, and the
+            // first press after the wake would be read as the end of it.
+            if self.isSuspended {
+                self.onDiagnostic?("DROPPED \(event.isPress ? "press  " : "release") \(event.button.rawValue) while suspended")
+                return
+            }
+
             // While a menu is up it owns the controller. This happens before the recognizer so the
             // navigation keys cannot be turned into arrow keys and sent to the chat window — and so
             // no chord or tap gesture can fire behind the overlay.
@@ -191,13 +207,7 @@ public final class ControllerEngine {
         // down, and a half-finished B press stays armed (spec §17, §18).
         coordinator.onDetach = { [weak self] name in
             guard let self else { return }
-            // Everything until this returns is teardown, not input: the HID source synthesises
-            // releases for whatever it thought was held, and those must not become gestures.
-            self.isDetaching = true
-            defer { self.isDetaching = false }
-            self.closeMenu()
-            self.dispatcher.releaseHeldStrokes()
-            self.recognizer.resetAndEmit()
+            self.tearDownInput()
             self.onControllerDetached?(name)
         }
         coordinator.onAttach = { [weak self] name in
@@ -211,6 +221,51 @@ public final class ControllerEngine {
         guard running else { return }
         running = false
         coordinator.stop()
+        recognizer.resetAndEmit()
+    }
+
+    // MARK: - Sleep / wake
+
+    /// Puts the controller down before the machine sleeps.
+    ///
+    /// Exactly the teardown a detach does — a direction that is down has to be released or the
+    /// target application keeps it down across the sleep, and the armed hold timer has to be
+    /// cancelled or it fires on the far side of it and switches applications by itself. The
+    /// coordinator is deliberately **not** stopped: the input sources are what report the
+    /// controller dropping off Bluetooth during the sleep and coming back after it, and stopping
+    /// them would throw away the notification registrations that make the recovery automatic.
+    ///
+    /// Incoming events are dropped until `resume()`, so the release of a button that was down when
+    /// the lid closed cannot re-enter the recognizer behind the teardown's back.
+    public func suspend() {
+        guard !isSuspended else { return }
+        isSuspended = true
+        tearDownInput()
+    }
+
+    /// Picks it back up after the wake, with the recognizer in a clean state.
+    ///
+    /// The reset is belt and braces: `suspend()` already cleared everything and nothing was
+    /// accepted in between, so this emits nothing in practice — but if it ever did, a release is
+    /// the one thing that is always safe to send.
+    public func resume() {
+        guard isSuspended else { return }
+        isSuspended = false
+        recognizer.resetAndEmit()
+    }
+
+    /// Release everything and forget every half-finished gesture.
+    ///
+    /// Shared by the detach and the sleep because they need the identical thing: the controller
+    /// stops being a source of input, and whatever it left behind — an open menu, a key that is
+    /// down in the target app, an armed hold timer — has to go with it. Everything until this
+    /// returns is teardown, not input: the synthesised releases must not be read as a B tap or a
+    /// hold, which is what `isDetaching` is for.
+    private func tearDownInput() {
+        isDetaching = true
+        defer { isDetaching = false }
+        closeMenu()
+        dispatcher.releaseHeldStrokes()
         recognizer.resetAndEmit()
     }
 

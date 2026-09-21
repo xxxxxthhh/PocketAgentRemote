@@ -29,7 +29,7 @@
 ```bash
 cd ~/Documents/agentController
 ./scripts/make-agent-app.sh release     # 构建 build/PocketAgentRemote.app
-open build/PocketAgentRemote.app        # 启动（菜单栏出现手柄图标）
+open /Applications/PocketAgentRemote.app   # 启动（脚本已把包复制到 /Applications；菜单栏出现手柄图标）
 swift test                              # 111 个测试
 ```
 
@@ -45,7 +45,7 @@ swift test                              # 111 个测试
 > 若机器上没有可用证书，脚本会回退 ad-hoc 并打印警告。
 
 **App 必须常驻**：C 档下手柄本身不向任何 App 发按键（它是游戏手柄），一切靠这个 App 注入。
-重启电脑后需要重新启动它 —— **开机自启还没做**。
+重启电脑后需要重新启动它，或在菜单栏勾上 **Launch at Login**（2026-09-21 新增，待实机验收）。
 
 ---
 
@@ -416,6 +416,9 @@ Tools/dump-menu-accelerators.swift 用 AX API 导出运行中 App 的真实菜�
   `releaseAll` 因此少释放一个修饰键 —— 两条既有测试立刻抓到，已按原语义重做。
 
 ### 未验证 ⚠️
+
+- **通用菜单（G4，2026-09-21）** —— 非 agent App 前台 `B+←` 读该 App 菜单栏（辅助功能 API）并 AXPress 执行；
+  Core 39 个用例 + CLI 实测（后台按微信菜单项成功、访达换窗口后拒绝执行）通过，未接手柄；见 `docs/test-manual.md` M12。
 - **程序切换器（`B 长按`，2026-09-18）** —— 已通过手柄实机 11 项验收（`docs/pending-user-tests.md` §L），
   含 `AppActivator` 改为按 bundle ID 寻址后 `Focus Other Agent Now` 的重验。
 - **旧 `B 长按`（切另一个 agent）与手柄菜单** —— 已通过手柄实机验收（2026-09-16）：切 App、菜单打开/导航/执行/
@@ -423,7 +426,9 @@ Tools/dump-menu-accelerators.swift 用 AX API 导出运行中 App 的真实菜�
 - **T / H 模式实拨验证** —— 代码层面确认不匹配键盘/鼠标设备，但没实际拨过开关
 - **Claude 的 Code 面板命令**（`⌘J` 终端 / `⌘⇧D` 变更 / `⌘⇧F` 文件 / `⌘;` 侧边对话）
   —— 菜单里实测为 `[OFF]`，需要先开 Code 会话
-- **系统睡眠/唤醒后的恢复** —— 只测过手柄断连
+- **系统睡眠/唤醒后的恢复（F10，2026-09-21）** —— 已实现待实机：合盖前释放按键、清手势与菜单状态、
+  取消定时器，醒来重置识别器并重查权限，日志有 `SLEEP` / `WAKE` 行（Core 8 个用例覆盖，App 层静态核对）。
+  同批的 **开机自启（F8）** 与 **权限丢失提示（F9）** 同样已实现待实机，验收步骤见 `docs/test-manual.md` M9–M11。
 - **长时间稳定性** —— 最长连续跑过约 1 小时
 - **`ActionRisk.macro` 路径** —— 没有任何动作用它，命令面板 macro 未实现
 - **`allowedBundleIDs` 在自动模式下不生效** —— 设计如此，但手动模式的白名单拦截没实测过

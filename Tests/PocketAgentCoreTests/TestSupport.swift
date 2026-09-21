@@ -168,6 +168,11 @@ func makeEngineRig(
     /// Which command menu `B+←` opens. Defaults to the shipped list; the G2 dial suite passes
     /// `AgentDialBuilder.menu` so the prototype is driven through the same real engine.
     commandMenu: ((AppConfig, String?) -> AgentMenu?)? = nil,
+    /// The G4 general menu, wired only when a test passes them: the reader for the frontmost app's
+    /// own menu bar, and the builder that turns what it found into rows. Left nil, the dispatcher
+    /// behaves exactly as it did before G4 — an app with no command menu opens nothing.
+    appMenuReader: AppMenuReading? = nil,
+    appMenuBuilder: ((String?, [AppMenuEntry]) -> AgentMenu?)? = nil,
     configure: (inout AppConfig) -> Void = { _ in }
 ) -> EngineRig {
     var config = AppConfig()
@@ -187,6 +192,8 @@ func makeEngineRig(
         if let commandMenu { return commandMenu(config, bundleID) }
         return AgentMenuBuilder.menu(for: config, frontmostBundleID: bundleID, frontmostName: "Codex")
     }
+    dispatcher.appMenuReader = appMenuReader
+    dispatcher.appMenuBuilder = appMenuBuilder
     if let switcherApps {
         dispatcher.switcherBuilder = { bundleID in
             AppSwitcherBuilder.menu(apps: switcherApps, frontmostBundleID: bundleID)

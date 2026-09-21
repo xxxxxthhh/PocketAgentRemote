@@ -16,6 +16,10 @@ public enum MenuChoice: Equatable, Sendable {
     /// call at page-turn time. Exactly one level deep: the dial builder is where that is enforced,
     /// because it is the layer that knows what a page means.
     case openSubmenu(title: String, items: [MenuItem])
+    /// Press an item of the frontmost app's own menu bar through Accessibility (G4 通用菜单).
+    /// `id` is the entry's id within the open `AppMenuSession` (what gets pressed); `path` is the
+    /// title path, kept for display, logs and favourites only.
+    case pressAppMenuItem(id: Int, path: [String])
 }
 
 /// One row of the on-screen menu.

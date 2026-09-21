@@ -41,6 +41,14 @@ public final class MenuOverlayController {
     private var stripNameLabel: NSTextField?
     /// Dial layout: the target app's name in the middle of the four slots.
     private var dialCenterLabel: NSTextField?
+    /// List layout: the index of the first row the viewport shows.
+    ///
+    /// Chrome's 「更多」 page is 41 rows — every extension and every window gets one — and drawn in
+    /// full it is a bar running the whole height of the screen. The panel holds
+    /// `visibleRowCount(_:on:)` rows instead, and this says where in the list that window sits.
+    /// Cleared by a rebuild, moved by `render` so the selection stays on screen; moving it only
+    /// re-places rows that already exist, which is why the T1.1 `rebuildCount` probe stays at 1.
+    private var listOffset = 0
     private var pollTimer: Timer?
     /// The app `pollTimer` is watching, so the same session does not restart it (see
     /// `startWatchingFrontmostApp`).
@@ -97,6 +105,9 @@ public final class MenuOverlayController {
             stripNameLabel?.stringValue = menu.selectedItem?.title ?? ""
             return
         }
+        // Long lists move their viewport before anything is painted, so the row about to be
+        // highlighted is one of the rows on screen. Rows are only re-placed, never rebuilt.
+        if menu.layout == .list { updateListViewport(for: menu) }
         // A dial can be showing nothing at all, so "which index is highlighted" is -1 rather than
         // `selection`. Rows and slots share these arrays, so one rule paints both layouts.
         let highlighted = menu.hasSelection ? menu.selection : -1
@@ -157,6 +168,8 @@ public final class MenuOverlayController {
         stripCells.removeAll()
         stripNameLabel = nil
         dialCenterLabel = nil
+        // New content, so the viewport goes back to the top; `render` scrolls it from there.
+        listOffset = 0
 
         let title = NSTextField(labelWithString: menu.title)
         title.font = .systemFont(ofSize: Self.titleFontSize, weight: .semibold)
@@ -221,6 +234,12 @@ public final class MenuOverlayController {
             label.font = .systemFont(ofSize: Self.rowFontSize, weight: .medium)
             label.textColor = .labelColor
             label.alignment = menu.layout == .dial ? .center : .left
+            if menu.layout == .list {
+                // A list row is as wide as the panel and no wider: Chrome's rows carry whole window
+                // and extension names, which used to run off the right edge.
+                label.lineBreakMode = .byTruncatingTail
+                label.usesSingleLineMode = true
+            }
             content.addSubview(label)
             rowLabels.append(label)
         }
@@ -229,7 +248,7 @@ public final class MenuOverlayController {
     }
 
     private func position(_ panel: NSPanel, for menu: AgentMenu) {
-        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let screen = Self.screenFrame
         if menu.layout == .strip {
             positionStrip(panel, cells: menu.items.count, on: screen)
             return
@@ -240,9 +259,8 @@ public final class MenuOverlayController {
             return
         }
 
-        let rows = menu.items.count
-        let height = Self.headerHeight + CGFloat(rows) * Self.rowHeight + Self.hintHeight + Self.padding * 2
-        let size = NSSize(width: Self.width, height: height)
+        // The height counts the rows the viewport shows, not the rows the menu has.
+        let size = Self.listPanelSize(rows: Self.visibleRowCount(menu.items.count, on: screen))
 
         // Lower-middle of the screen: close enough to read without a controller-holder having to
         // look up, and out of the way of the composer the agent itself puts at the bottom.
@@ -252,29 +270,79 @@ public final class MenuOverlayController {
         )
         panel.setFrame(NSRect(origin: origin, size: size), display: true)
 
-        // Lay the rows out after the frame is known.
-        guard let content = panel.contentView else { return }
-        var y = size.height - Self.padding - Self.headerHeight
-        titleLabel?.frame = NSRect(x: Self.padding, y: y, width: size.width - Self.padding * 2, height: Self.headerHeight)
-        y -= Self.rowHeight
+        // Header and hint sit at the panel's edges whatever the viewport is doing; the rows in
+        // between are placed by the viewport, so that one piece of arithmetic serves both the first
+        // draw and every later selection move.
+        titleLabel?.frame = NSRect(
+            x: Self.padding,
+            y: size.height - Self.padding - Self.headerHeight,
+            width: size.width - Self.padding * 2,
+            height: Self.headerHeight
+        )
+        hintLabel?.frame = NSRect(x: Self.padding, y: Self.padding, width: size.width - Self.padding * 2, height: Self.hintHeight)
+        updateListViewport(for: menu)
+    }
 
+    // MARK: - List viewport
+
+    /// Scrolls the viewport far enough that the selection is on screen, re-places the rows, and
+    /// writes the position into the title.
+    ///
+    /// This is on the `render` path, so it may not rebuild anything — every row already exists as
+    /// a view, and all this does is move frames, hide the rows outside the window, set a string.
+    private func updateListViewport(for menu: AgentMenu) {
+        let visible = Self.visibleRowCount(menu.items.count, on: Self.screenFrame)
+        // A list always opens on a row (`AgentMenu.hasSelection`), so there is always one to keep
+        // in view. One step off either edge scrolls by one row; the wrap-around at the ends jumps
+        // the whole way, which is what these same two lines already do.
+        let selection = menu.selection
+        if selection < listOffset {
+            listOffset = selection
+        } else if selection >= listOffset + visible {
+            listOffset = selection - visible + 1
+        }
+        listOffset = min(max(listOffset, 0), max(menu.items.count - visible, 0))
+
+        layoutListRows(in: Self.listPanelSize(rows: visible), visible: visible)
+        // The counter appears only when something is off screen: 41 rows of Chrome need it to say
+        // where the user is, a menu that fits keeps the app's own name alone.
+        titleLabel?.stringValue = visible < menu.items.count
+            ? "\(menu.title) · \(selection + 1)/\(menu.items.count)"
+            : menu.title
+    }
+
+    /// Places the `visible` rows starting at `listOffset` and hides every other one.
+    private func layoutListRows(in size: NSSize, visible: Int) {
+        let top = size.height - Self.padding - Self.headerHeight - Self.rowHeight
         for index in rowLabels.indices {
-            let label = rowLabels[index]
-            let rowFrame = NSRect(x: Self.padding, y: y, width: size.width - Self.padding * 2, height: Self.rowHeight)
+            let slot = index - listOffset
+            guard slot >= 0, slot < visible else {
+                rowBackgrounds[index].isHidden = true
+                rowLabels[index].isHidden = true
+                continue
+            }
+            rowBackgrounds[index].isHidden = false
+            rowLabels[index].isHidden = false
+
+            let rowFrame = NSRect(
+                x: Self.padding,
+                y: top - CGFloat(slot) * Self.rowHeight,
+                width: size.width - Self.padding * 2,
+                height: Self.rowHeight
+            )
             rowBackgrounds[index].frame = rowFrame.insetBy(dx: 0, dy: 3)
-            label.frame = rowFrame.offsetBy(dx: 12, dy: 0)
+
+            // `sizeToFit` is asked for the line height only — the width is the row's, so a title
+            // longer than the panel truncates with an ellipsis instead of running off the edge.
+            let label = rowLabels[index]
             label.sizeToFit()
             label.frame = NSRect(
                 x: rowFrame.minX + 14,
                 y: rowFrame.midY - label.frame.height / 2,
-                width: label.frame.width,
+                width: rowFrame.width - 28,
                 height: label.frame.height
             )
-            y -= Self.rowHeight
         }
-
-        hintLabel?.frame = NSRect(x: Self.padding, y: Self.padding, width: size.width - Self.padding * 2, height: Self.hintHeight)
-        _ = content
     }
 
     /// Four slots on a 3×3 grid: ↑ top, ← left, ↓ bottom, → right, app name in the middle.
@@ -400,8 +468,32 @@ public final class MenuOverlayController {
     /// Dial layout: the square the 3×3 grid of slots fills.
     private static let dialSide: CGFloat = 460
     private static let stripNameHeight: CGFloat = 40
+    /// List layout: the ceiling on rows drawn at once, and the share of the screen they may take.
+    ///
+    /// Ten is already more than anyone reads at a glance from a sofa; the fraction is what stops a
+    /// 41-row menu on a short screen from becoming a full-height bar.
+    private static let maxVisibleRows = 10
+    private static let maxScreenFraction: CGFloat = 0.6
     /// Deliberately large: this is meant to be readable from a sofa, not from 40 cm away.
     private static let rowFontSize: CGFloat = 26
     private static let titleFontSize: CGFloat = 15
     private static let hintFontSize: CGFloat = 13
+
+    private static var screenFrame: NSRect {
+        NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+    }
+
+    /// How many rows of a list the panel shows at once: the rows there are, `maxVisibleRows`, or
+    /// what `maxScreenFraction` of the screen leaves once the header, the hint and the padding have
+    /// taken their share — whichever is smallest. Never zero, so even an absurdly short screen
+    /// still draws the row under the highlight.
+    private static func visibleRowCount(_ count: Int, on screen: NSRect) -> Int {
+        let furniture = headerHeight + hintHeight + padding * 2
+        let fits = Int((screen.height * maxScreenFraction - furniture) / rowHeight)
+        return max(1, min(count, maxVisibleRows, fits))
+    }
+
+    private static func listPanelSize(rows: Int) -> NSSize {
+        NSSize(width: width, height: headerHeight + CGFloat(rows) * rowHeight + hintHeight + padding * 2)
+    }
 }
