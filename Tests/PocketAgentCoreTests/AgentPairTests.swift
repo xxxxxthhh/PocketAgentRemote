@@ -115,28 +115,123 @@ final class AppActivatorTests: XCTestCase {
         func frontmostBundleID() -> String? { bundleID }
     }
 
+    /// A target app under test: how long it takes to answer the request, how long until it is
+    /// actually in front, and whether the request errors. Drives the activator through the manual
+    /// clock, so "two seconds" costs nothing.
+    private struct Target {
+        var replyAfter: TimeInterval = 0.02
+        var frontAfter: TimeInterval? = 0.05
+        var replyError: String? = nil
+    }
+
+    private func run(
+        _ target: Target,
+        frontmostBefore: String = "com.openai.codex",
+        bundleID: String = "com.tencent.xinWeChat",
+        methodOrder: [AppActivationMethod] = [.appleScript, .runningApplication],
+        running: Bool = true
+    ) -> (result: Result, scheduler: ManualScheduler, frontmost: FixedFrontmost) {
+        let scheduler = ManualScheduler()
+        let frontmost = FixedFrontmost(frontmostBefore)
+        var requests: [AppActivationMethod] = []
+        let activator = AppActivator(
+            frontmost: frontmost,
+            scheduler: scheduler,
+            clock: { scheduler.now },
+            isRunning: { _ in running },
+            requester: { method, _, completion in
+                requests.append(method)
+                _ = scheduler.schedule(after: target.replyAfter) { completion(target.replyError) }
+                if let frontAfter = target.frontAfter, requests.count == 1 {
+                    _ = scheduler.schedule(after: frontAfter) { frontmost.bundleID = bundleID }
+                }
+            }
+        )
+        activator.methodOrder = methodOrder
+        let result = Result()
+        activator.activate(bundleID: bundleID) { result.outcome = $0 }
+        return (result, scheduler, frontmost)
+    }
+
+    /// The completion lands later, on the manual clock, so the test reads through a box.
+    private final class Result {
+        var outcome: AppActivationOutcome?
+    }
+
+    /// Moves the clock the way a real timer would: in poll-sized steps, so each poll is scheduled
+    /// from the time it actually fired at, not from wherever a single jump landed.
+    private func step(_ scheduler: ManualScheduler, to time: TimeInterval) {
+        var t = scheduler.now
+        while t < time {
+            t = min(t + AppActivator.defaultPollInterval, time)
+            scheduler.advance(to: t)
+        }
+    }
+
     func testAnAppThatIsNotRunningIsReportedRatherThanPretended() {
-        let frontmost = FixedFrontmost("com.openai.codex")
-        let activator = AppActivator(frontmost: frontmost, timeout: 0.05, pollInterval: 0.01)
+        let (result, _, _) = run(Target(), running: false)
+        XCTAssertEqual(result.outcome?.succeeded, false)
+        XCTAssertEqual(result.outcome?.attempts.count, AppActivationMethod.allCases.count)
+        XCTAssertTrue(result.outcome?.attempts.allSatisfy { $0.reason == "app is not running" } ?? false)
+        XCTAssertTrue(AppActivationReport.describe(result.outcome!).contains("not running"))
+    }
 
-        let outcome = activator.activate(bundleID: "com.example.definitely-not-installed")
+    func testAFastAppSucceedsAsSoonAsItIsInFront() {
+        let (result, scheduler, _) = run(Target(replyAfter: 0.02, frontAfter: 0.05))
+        XCTAssertNil(result.outcome, "nothing is decided at request time")
+        scheduler.advance(to: 0.04); XCTAssertNil(result.outcome)
+        scheduler.advance(to: 0.10)
+        XCTAssertEqual(result.outcome?.succeeded, true)
+        XCTAssertEqual(result.outcome?.method, .appleScript)
+        XCTAssertEqual(result.outcome?.attempts.count, 1)
+        XCTAssertLessThanOrEqual(result.outcome!.elapsedMs, 100)
+    }
 
-        XCTAssertFalse(outcome.succeeded)
-        XCTAssertEqual(outcome.attempts.count, AppActivationMethod.allCases.count)
-        XCTAssertTrue(outcome.attempts.allSatisfy { $0.reason == "app is not running" })
-        XCTAssertTrue(AppActivationReport.describe(outcome).contains("not running"))
+    func testASlowAppIsNotReportedAsAFailureWhileItIsStillComing() {
+        // WeChat: answers the Apple event after ~2 s and lands after that. The old 0.5 s wait called
+        // this a failure and then watched it succeed.
+        let (result, scheduler, _) = run(Target(replyAfter: 2.1, frontAfter: 3.0))
+        scheduler.advance(to: 2.5)
+        XCTAssertNil(result.outcome, "the reply alone proves nothing; keep waiting")
+        scheduler.advance(to: 3.05)
+        XCTAssertEqual(result.outcome?.succeeded, true)
+        XCTAssertEqual(result.outcome?.method, .appleScript)
+        XCTAssertGreaterThanOrEqual(result.outcome!.elapsedMs, 3000)
+        XCTAssertTrue(AppActivationReport.describe(result.outcome!).contains("via appleScript in 3"), AppActivationReport.describe(result.outcome!))
+    }
+
+    func testAnAppThatNeverComesForwardFailsAfterBothBudgets() {
+        let (result, scheduler, _) = run(Target(replyAfter: 0.02, frontAfter: nil))
+        step(scheduler, to: AppActivator.defaultVerificationTimeout - 0.01)
+        XCTAssertNil(result.outcome)
+        step(scheduler, to: AppActivator.defaultVerificationTimeout + AppActivator.defaultFallbackTimeout + 0.1)
+        XCTAssertEqual(result.outcome?.succeeded, false)
+        XCTAssertEqual(result.outcome?.attempts.map(\.method), [.appleScript, .runningApplication])
+        XCTAssertEqual(result.outcome?.attempts.map(\.succeeded), [false, false])
+        // Within one poll of the budget: the deadline is noticed on the next tick after it passes.
+        XCTAssertEqual(Double(result.outcome!.attempts[0].elapsedMs), 4000, accuracy: 100)
+        XCTAssertEqual(Double(result.outcome!.attempts[1].elapsedMs), 1000, accuracy: 100)
+        let line = AppActivationReport.describe(result.outcome!)
+        XCTAssertTrue(line.contains("could not focus"), line)
+        XCTAssertNotNil(line.range(of: #"appleScript✗ 4\d{3} ms → runningApplication✗ 1\d{3} ms"#, options: .regularExpression), line)
+        XCTAssertTrue(line.contains("frontmost was com.openai.codex"), line)
+    }
+
+    func testARefusedRequestFallsThroughToTheNextMethodAtOnce() {
+        let (result, scheduler, _) = run(Target(replyAfter: 0.02, frontAfter: nil, replyError: "AppleScript error -600: not running"))
+        step(scheduler, to: 0.03)
+        XCTAssertNil(result.outcome, "the fallback is now in flight")
+        step(scheduler, to: 0.03 + AppActivator.defaultFallbackTimeout + 0.1)
+        XCTAssertEqual(result.outcome?.succeeded, false)
+        XCTAssertEqual(result.outcome?.attempts.first?.reason, "AppleScript error -600: not running")
+        XCTAssertLessThan(result.outcome!.attempts[0].elapsedMs, 100, "no 4 s wait on a request that was refused")
     }
 
     func testAFailedActivationNamesEveryMethodItTried() {
-        // A frontmost app that never changes stands in for "the activation did not take effect".
-        let frontmost = FixedFrontmost("com.openai.codex")
-        let activator = AppActivator(frontmost: frontmost, timeout: 0.05, pollInterval: 0.01)
-        activator.methodOrder = [.runningApplication]
-
-        let outcome = activator.activate(bundleID: "com.example.definitely-not-installed")
-
-        XCTAssertFalse(outcome.succeeded)
-        XCTAssertEqual(outcome.attempts.map(\.method), [.runningApplication])
-        XCTAssertNotNil(outcome.reason)
+        let (result, scheduler, _) = run(Target(replyAfter: 0.02, frontAfter: nil), methodOrder: [.runningApplication])
+        step(scheduler, to: AppActivator.defaultVerificationTimeout + 0.1)
+        XCTAssertEqual(result.outcome?.succeeded, false)
+        XCTAssertEqual(result.outcome?.attempts.map(\.method), [.runningApplication])
+        XCTAssertNotNil(result.outcome?.reason)
     }
 }

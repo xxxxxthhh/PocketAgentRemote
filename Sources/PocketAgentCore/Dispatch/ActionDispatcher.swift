@@ -288,8 +288,11 @@ public final class ActionDispatcher: ActionDispatching {
             return .activated(bundleID: bundleID)
         }
         onDiagnostic?("MENU  switching to \(bundleID) (\(title))")
-        let outcome = activator.activate(bundleID: bundleID)
-        onActivation?(.openAppSwitcher, outcome)
+        // Reported when it lands (or gives up), not now: the activation is asynchronous so a slow
+        // target does not freeze the controller.
+        activator.activate(bundleID: bundleID) { [weak self] outcome in
+            self?.onActivation?(.openAppSwitcher, outcome)
+        }
         return .activated(bundleID: bundleID)
     }
 
@@ -390,10 +393,9 @@ public final class ActionDispatcher: ActionDispatching {
             return
         }
 
-        let outcome = activator.activate(bundleID: target)
-        // Reported through the dedicated hook, not `onDiagnostic`: one line per activation attempt,
-        // written by the app under its own tag.
-        onActivation?(action, outcome)
+        activator.activate(bundleID: target) { [weak self] outcome in
+            self?.onActivation?(action, outcome)
+        }
     }
 
     private func emitRaw(_ stroke: KeyStroke, phase: KeyPhase, frontmostBundleID: String?) {

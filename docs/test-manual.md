@@ -195,6 +195,22 @@ Claude 前台时开关无效，仍出原列表。
 
 **判定**：7a/7b/7c/7f 必须过。重复节奏（0.35 s 后每 80 ms）是拍脑袋定的，太快太慢告诉我改。
 
+### M8 切换慢的程序不再误报（2026-09-21）
+
+以前切微信：卡 3 秒 → 弹「切换失败」→ 微信才到前台。原因是微信回 AppleScript 要 2 秒，而验证只等 0.5 秒，
+且整个过程堵在主线程。现在改成后台发请求、最多等 4 秒、每 50 毫秒看一次前台。
+
+| # | 怎么做 | 应该看到 | 日志 |
+|---|---|---|---|
+| 8a | 从 Codex 开切换器，选微信，按 A | 浮层立刻关；约 2 秒后微信到前台；**没有**失败提示 | `FOCUS openAppSwitcher: focused com.tencent.xinWeChat via appleScript in 2xxx ms` |
+| 8b | 8a 的 2 秒等待期间按 ←→ 或 B 长按 | 手柄立刻有反应（以前这 3 秒是冻住的） | 等待期间有正常的 `SEND` / `MENU` 行 |
+| 8c | 切换器选 Codex / Claude / iTerm 按 A | 和以前一样快，没有变慢 | `focused … in 40–150 ms` |
+| 8d | 菜单栏 → `Focus Other Agent Now` | 切到另一个 agent；菜单栏 `Last switch:` 在切换完成后才更新 | `FOCUS manual: focused …` |
+| 8e | 把微信**退出**，切换器里它不会出现；若刚退出还在列表里就选它按 A | 立刻弹「切换失败：微信（app is not running）」，不等 4 秒 | `could not focus … app is not running` |
+| 8f | （可选）找一个真的切不过去的目标 | 4 秒后才弹失败，提示里有两种方法各自的耗时 | `could not focus X (appleScript✗ 4xxx ms → runningApplication✗ 1xxx ms)` |
+
+**判定**：8a 无提示且日志是 `focused`，8b 不冻手柄。8f 找不到目标就跳过。
+
 ## 3. 需要你做的实机 spike（代码做不了的部分）
 
 这些在 §7 里是有 time-box 的验证单，只有你有手柄和真实 App。每项都给了记录表，填完给我。
@@ -265,4 +281,5 @@ Codex 前台，用一个**可丢弃的测试会话**。四个动作各做 5 次�
 | M5 (5a–5g) | ⬜ | |
 | M6 | ⬜ | |
 | M7 (7a–7h) | ⬜ | |
+| M8 (8a–8f) | ⬜ | |
 | S1–S4 | ⬜ | |

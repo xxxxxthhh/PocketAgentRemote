@@ -171,10 +171,10 @@ final class MenuRedrawContractTests: XCTestCase {
     /// so five presses land on a different app instead of wrapping back to the one in front.
     func testACompleteSwitchWritesExactlyTwoMenuLines() {
         final class Spy: AppActivating {
-            func activate(bundleID: String) -> AppActivationOutcome {
-                AppActivationOutcome(
+            func activate(bundleID: String, completion: @escaping (AppActivationOutcome) -> Void) {
+                completion(AppActivationOutcome(
                     succeeded: true, bundleID: bundleID, method: .appleScript, elapsedMs: 5,
-                    attempts: [AppActivationAttempt(method: .appleScript, succeeded: true, elapsedMs: 5)])
+                    attempts: [AppActivationAttempt(method: .appleScript, succeeded: true, elapsedMs: 5)]))
             }
         }
         let many = (0..<7).map { RunningApp(bundleID: "app.\($0)", name: "App \($0)") }

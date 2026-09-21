@@ -285,8 +285,7 @@ final class AppEnvironment {
     /// Manual smoke test for the cross-app switch: same code path the gesture uses, minus the
     /// controller. Useful because "the button did nothing" and "the app was not running" look
     /// identical from the sofa.
-    @discardableResult
-    func focusOtherAgentNow() -> AppActivationOutcome? {
+    func focusOtherAgentNow() {
         let config = configStore.config
         guard let target = config.focusOtherAgentTarget(
             frontmostBundleID: frontmostObserver.frontmostBundleID()
@@ -294,16 +293,17 @@ final class AppEnvironment {
             debugLog.append("FOCUS", "manual: the agent pair in config is empty")
             // Same mapper as the dispatcher path, so the two entry points cannot drift apart.
             showFailure(unsupportedMessage(.focusOtherAgent, "the agent pair in config is empty"))
-            return nil
+            return
         }
-        let outcome = activator.activate(bundleID: target)
-        lastActivationSummary = AppActivationReport.describe(outcome)
-        debugLog.append("FOCUS", "manual: \(lastActivationSummary ?? "")")
-        // This path calls the activator directly, so it never reaches `dispatcher.onActivation` —
-        // it has to show its own failure or the menu-bar entry point would stay silent.
-        if !outcome.succeeded { showFailure(activationMessage(outcome)) }
-        onStatusChange?()
-        return outcome
+        activator.activate(bundleID: target) { [weak self] outcome in
+            guard let self else { return }
+            self.lastActivationSummary = AppActivationReport.describe(outcome)
+            self.debugLog.append("FOCUS", "manual: \(self.lastActivationSummary ?? "")")
+            // This path calls the activator directly, so it never reaches `dispatcher.onActivation`
+            // — it has to show its own failure or the menu-bar entry point would stay silent.
+            if !outcome.succeeded { self.showFailure(self.activationMessage(outcome)) }
+            self.onStatusChange?()
+        }
     }
 
     /// True while the on-screen menu is up.

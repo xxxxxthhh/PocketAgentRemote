@@ -38,9 +38,9 @@ private final class SpyActivator: AppActivating {
         )
     }
 
-    func activate(bundleID: String) -> AppActivationOutcome {
+    func activate(bundleID: String, completion: @escaping (AppActivationOutcome) -> Void) {
         requested.append(bundleID)
-        return result(bundleID)
+        completion(result(bundleID))
     }
 }
 

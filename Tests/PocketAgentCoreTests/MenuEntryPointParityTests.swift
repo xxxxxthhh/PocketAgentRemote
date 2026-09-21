@@ -27,11 +27,11 @@ final class MenuEntryPointParityTests: XCTestCase {
 
     private final class SpyActivator: AppActivating {
         private(set) var requested: [String] = []
-        func activate(bundleID: String) -> AppActivationOutcome {
+        func activate(bundleID: String, completion: @escaping (AppActivationOutcome) -> Void) {
             requested.append(bundleID)
-            return AppActivationOutcome(
+            completion(AppActivationOutcome(
                 succeeded: true, bundleID: bundleID, method: .appleScript, elapsedMs: 5,
-                attempts: [AppActivationAttempt(method: .appleScript, succeeded: true, elapsedMs: 5)])
+                attempts: [AppActivationAttempt(method: .appleScript, succeeded: true, elapsedMs: 5)]))
         }
     }
 
