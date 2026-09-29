@@ -77,9 +77,9 @@ open /Applications/PocketAgentRemote.app   # 启动（脚本已把包复制到 /
 
 也可以切回 `"profileMode": "manual"`：那时在菜单里手动指定 profile，白名单负责拦住发错对象。
 
-> 这个设计**推翻了 spec v0.3 的 §6.4/§23.7**（「profile 必须显式选择、绝不推断」）。
-> 那条的理由是 v0.1 时代的「猜终端里跑的是哪个 agent」，在 macOS 上确实不可靠；
-> 而读前台 App 的 bundle ID 是精确的，守卫本来就在用同一个信号。前提变了，所以规则改了。
+> **为什么可以自动推断**：早期规格要求 profile 必须手动选择，因为当时要「猜终端里跑的是哪个 agent」，
+> 这在 macOS 上不可靠。现在读的是前台 App 的 bundle ID，这是精确信号，守卫本来也在用它，
+> 所以自动模式是安全的默认值。
 
 ### 排查问题
 
@@ -354,44 +354,41 @@ chord       b.up · b.down · b.left · b.right · b.a
 
 ## 安全模型
 
-- 默认 `macrosEnabled = false`，默认 profile 是 Generic Terminal
-- 工具专属动作**必须**显式选 profile，且前台 App 必须在白名单内（默认只有两个 AI App + 常见终端/IDE）
+- 默认 `macrosEnabled = false`；默认自动模式，未知 App 一律落到 Generic（只有方向键 / 回车 / Esc）
+- 工具专属动作只会发给对应的 App：自动模式下 profile 由前台 App 决定；手动模式下前台 App 还必须在白名单内
+  （默认只有两个 AI App + 常见终端/IDE）
 - 被守卫拦下的动作**不做任何替代**，只报原因 —— 尤其是权限模式，绝不会被悄悄换成「批准」
 - 退出、断连、睡眠时释放所有修饰键与按住的键
 
 ---
 
-## 当前状态
+## 项目状态
 
-| 阶段 | 状态 |
+日常可用，345 个单元测试全部通过。各功能的验证程度不同：
+
+| 功能 | 验证程度 |
 |---|---|
-| Phase 0 硬件探针 | ✅ 三种模式、两个变体全部实测 |
-| Phase 1 控制器核心 | ✅ 73 个单测 + 真机验证（两条输入路径均通过） |
-| Phase 2 菜单栏 App | ✅ 可用（见 `docs/pending-user-tests.md` 待你验收） |
-| Phase 3 适配层 | ✅ Codex / Claude / Generic 三套；Codex 侧 8/11 动作有默认键位 |
-| 跨 App 切换（`Focus Other Agent Now`） | ✅ 已验收；手柄入口已让位给程序切换器 |
-| 手柄菜单（`B+←`） | ✅ 单测 + 真实窗口冒烟 + 手柄实机验收全部通过 |
-| 程序切换器（`B 长按`） | ✅ 单测 + 手柄实机 11 项验收全部通过（2026-09-18） |
-| 菜单栏入口（`Show Controller Menu` / `Show App Switcher`） | ✅ 2026-09-18 修复（此前开得出但执行不了）；待实机 |
-| A 键边界（重复按压、长按中切 App 不卡 ⌥） | ✅ 2026-09-18 修复；待实机 |
-| 切换器连按不重建浮层 | ✅ 单测；待实机 |
-| 屏幕提示（失败反馈） | ✅ 单测；待实机 |
-| 四向操作盘（Dial） | 🧪 实验原型，默认关闭；待对照测试 |
+| 手柄输入（C 档两个变体） | ✅ 真机实测 |
+| Codex / Claude / Generic 三套键位 | ✅ Codex、Claude 两侧真机实测；Codex 侧 8/11 个动作有默认键位 |
+| 手柄菜单（`B+←`） | ✅ 单测 + 真实窗口 + 手柄实机 |
+| 程序切换器（`B 长按`） | ✅ 单测 + 手柄实机 11 项验收 |
+| 菜单栏入口、A 键边界情况、屏幕提示、切换器连按 | ✅ 单测覆盖；尚未完整实机验收 |
+| 四向操作盘（Dial） | 🧪 实验功能，默认关闭 |
 
 ### 已知限制
 
-- **Codex 没有权限模式循环动作**，`B+↑` 已改绑 `新建会话`。切权限模式请用 Codex 自己的 UI。
+- **Codex 没有权限模式循环动作**，切权限模式请用 Codex 自己的 UI。
 - **Claude 侧的动作映射未做深度验证**（调研深度不及 Codex），`queueFollowUp` 在 Claude 上不可用。
 - **`B 长按` 现在是程序切换器，不再是「拒绝」**：审批时拒绝请用 B 轻按。这是刻意的取舍。
-- **跨 App 切换依赖 AppleScript**：进程内的 `activate()` / AX / 合成 `⌘⇥` 在本机实测全部无效，
+- **跨 App 切换依赖 AppleScript**：进程内的 `activate()` / AX / 合成 `⌘⇥` 在 macOS 27 上实测全部无效，
   所以 `Info.plist` 里的 `NSAppleEventsUsageDescription` 是必需的。若将来系统改规则，
   日志会打印实际生效的方法（`via appleScript`）以及全部失败原因。
 - **A 轻按的 Enter 在松开时才发**（最多晚 220 ms）：因为要等到松开才知道这次是短按还是按住说话。
   想要「按下即发」就得放弃单键语音，这是取舍不是 bug。
 - **屏幕提示不能手动关**，只能等 3 秒；也不弹成功提示。
 - **四向操作盘只有 Codex 有**，Claude 仍是列表；且选择不保存，重启回到列表。
-- **`B+A` 不再是语音**：语音只剩 A 长按。想要回旧方式，配置里给 `b.a` 写一个**和旧默认值不同**的绑定
-  （例如左 `option`：`"b.a": { "modifiers": ["option"], "hold": true }`）；写回右 ⌥ 会被启动时的迁移再次移除。
+- **语音输入只绑在 A 长按上**（`B+A` 是退格）。如果想把语音挂到 `B+A`，配置里给 `b.a` 写一个**不是右 ⌥** 的绑定
+  （例如左 `option`：`"b.a": { "modifiers": ["option"], "hold": true }`）；写成右 ⌥ 会被启动时的旧配置迁移移除。
   配置里自定义的 `b.a` 是「一次一击」，不会按住重复，且在浏览器等非 agent App 里会被拦下。
 - 手柄的 **H 档（键盘模式）不消费输入** —— 只识别。C 档两个变体都完整支持。
 
@@ -400,11 +397,11 @@ chord       b.up · b.down · b.left · b.right · b.a
 ## 目录
 
 ```text
-docs/HANDOFF.md                ⭐ 当前真实状态（新会话从这里读起）
-docs/spec-v0.3.md              设计意图（与实现已有偏离，见 HANDOFF §6）
-docs/ux-roadmap.md             体验路线图 + §7 执行计划（任务单、验收标准）
-docs/test-manual.md            2026-09-18 批次的功能测试手册（你按这个测）
-docs/pending-user-tests.md     更早的待验证清单
+docs/HANDOFF.md                ⭐ 开发者入口：当前实现状态与关键设计决策
+docs/spec-v0.3.md              最初的设计规格（部分已被实现取代，见 HANDOFF §6）
+docs/ux-roadmap.md             体验路线图与执行计划
+docs/test-manual.md            功能测试手册（逐项实机验收步骤）
+docs/pending-user-tests.md     早期的实机验证清单
 docs/codex-shortcuts.md        Codex 快捷键（官方面板 + 菜单实测导出）
 docs/codex-menu-shortcuts.md   菜单导出早期版本（44 条，对照用）
 docs/phase0-summary.md         硬件实测结论与实现约束
