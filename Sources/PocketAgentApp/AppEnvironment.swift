@@ -59,8 +59,8 @@ final class AppEnvironment {
     private var accessibilityTimer: Timer?
 
     /// The two F9 notices. Written once so the startup case and the revoke case cannot drift apart.
-    private static let accessibilityLostMessage = "辅助功能权限已失效：按键会被系统丢弃，去设置重新勾选"
-    private static let accessibilityRestoredMessage = "辅助功能权限已恢复"
+    private static let accessibilityLostMessage = "Accessibility permission lost: keys are being dropped. Re-enable it in Settings"
+    private static let accessibilityRestoredMessage = "Accessibility permission restored"
 
     private(set) var connectedDevice: String?
     private(set) var isAccessibilityGranted: Bool
@@ -224,7 +224,7 @@ final class AppEnvironment {
                 bundleID: bundleID,
                 // The app's own localized name, which is what its menu bar says — the bundle ID is
                 // only a header of last resort.
-                appName: self.frontmostObserver.frontmostAppName() ?? bundleID ?? "前台程序",
+                appName: self.frontmostObserver.frontmostAppName() ?? bundleID ?? "Frontmost App",
                 favorites: self.configStore.config.appMenuFavorites(for: bundleID)
             )
         }
@@ -432,95 +432,95 @@ final class AppEnvironment {
 
     // MARK: - Failure messages
 
-    /// Shows one short Chinese message. The single display path, so every failure looks the same
+    /// Shows one short message. The single display path, so every failure looks the same
     /// wherever it came from.
     private func showFailure(_ message: String) {
         failureToast.show(message)
         debugLog.append("TOAST", message)
     }
 
-    /// "已拦截：…" — the guard refused, or a menu row was refused because focus moved.
+    /// "Blocked: …" — the guard refused, or a menu row was refused because focus moved.
     ///
     /// The reason arrives as the English text `ActionGuard` (or the menu refusal) built, so this
     /// matches on it. That is a coupling to those strings and they live in this same repo; if a
     /// third reason is ever added the fallback shows it verbatim rather than lying.
     private func deniedMessage(_ action: AgentAction?, _ reason: String) -> String {
         if reason.contains("menu item refused") {
-            return "已拦截：前台已切换，菜单项未执行"
+            return "Blocked: app changed, menu item not run"
         }
-        // G4 v2: the app never changed, the window did — and 「前台已切换」 would be a lie the user
+        // G4 v2: the app never changed, the window did — and "app changed" would be a lie the user
         // could check against their own screen.
         if reason.contains("app menu context changed") {
-            return "已拦截：窗口已切换，菜单项未执行"
+            return "Blocked: window changed, menu item not run"
         }
         if reason.contains("requires an explicit profile") {
-            return "已拦截：当前是通用模式，工具专属动作不发送"
+            return "Blocked: Generic mode doesn't send agent-only actions"
         }
         if reason.contains("macros are disabled") {
-            return "已拦截：宏未启用"
+            return "Blocked: macros are disabled"
         }
         if reason.contains("cannot determine the frontmost") {
-            return "已拦截：读不到前台程序"
+            return "Blocked: can't read the frontmost app"
         }
         if reason.contains("not in the allowlist") {
-            return "已拦截：前台不是 agent（不在白名单）"
+            return "Blocked: frontmost app isn't an agent (not allowlisted)"
         }
-        return "已拦截：\(actionLabel(action))（\(reason)）"
+        return "Blocked: \(actionLabel(action)) (\(reason))"
     }
 
-    /// "<工具> 不支持：…" for an adapter gap, and a plain reason for the environmental refusals
+    /// "<Tool> doesn't support …" for an adapter gap, and a plain reason for the environmental refusals
     /// that now arrive on the same hook.
     private func unsupportedMessage(_ action: AgentAction, _ reason: String) -> String {
         // G4: the row was shown, so the user is owed the reason it did not run. The item's own state
         // and the app's are told apart, because "greyed out" is normal and "no answer" is not.
         if action == .openMenu {
             if reason.contains("app menu item is disabled") {
-                return "菜单项已不可用"
+                return "Menu item is unavailable"
             }
             if reason.contains("app menu item no longer exists") {
-                return "找不到该菜单项"
+                return "Menu item not found"
             }
             if reason.contains("app menu unavailable") || reason.contains("app menu press failed") {
-                return "App 未响应"
+                return "App not responding"
             }
             if reason.contains("app menu reader unavailable") {
-                return "打不开菜单：本次构建未接入通用菜单"
+                return "Can't open menu: app menus not in this build"
             }
             if reason.contains("the frontmost app is unknown") {
-                return "打不开菜单：读不到前台程序"
+                return "Can't open menu: can't read the frontmost app"
             }
         }
         if reason.contains("no agent in front") {
-            return "打不开菜单：前台不是 agent"
+            return "Can't open menu: frontmost app isn't an agent"
         }
         if reason.contains("fewer than two apps") {
-            return "打不开切换器：可切换的程序不足两个"
+            return "Can't open switcher: fewer than two apps"
         }
         if reason.contains("not wired up") {
-            return "切换失败：本次构建未接入程序激活"
+            return "Switch failed: app activation not in this build"
         }
         if reason.contains("agent pair in config is empty") {
-            return "切换失败：配置里没有设置两个 agent"
+            return "Switch failed: no agent pair in config"
         }
-        return "\(profileLabel()) 不支持：\(actionLabel(action))"
+        return "\(profileLabel()) doesn't support \(actionLabel(action))"
     }
 
-    /// "切换失败：<程序>（<原因>）" — the reason comes from the activator, not from a string match.
+    /// "Switch failed: <app> (<reason>)" — the reason comes from the activator, not from a string match.
     private func activationMessage(_ outcome: AppActivationOutcome) -> String {
         let name = configStore.config.agentPair.name(for: outcome.bundleID)
             ?? NSRunningApplication.runningApplications(withBundleIdentifier: outcome.bundleID)
                 .first?.localizedName
             ?? outcome.bundleID
-        return "切换失败：\(name)（\(outcome.reason ?? "未知原因")）"
+        return "Switch failed: \(name) (\(outcome.reason ?? "unknown reason"))"
     }
 
-    /// The Chinese label a menu already uses for this action, so the toast and the menu agree.
+    /// The label a menu already uses for this action, so the toast and the menu agree.
     ///
     /// The menus are the primary source — a row and a toast naming the same action differently would
     /// be worse than either. Gesture-only actions appear in no menu, so they get the short names
     /// below; anything still unnamed shows its identifier rather than a guess.
     private func actionLabel(_ action: AgentAction?) -> String {
-        guard let action else { return "该手势" }
+        guard let action else { return "this gesture" }
         let overrides = configStore.config.overrides
         for profile in ToolProfile.allCases {
             if let title = AdapterCatalog.adapter(for: profile, overrides: overrides)
@@ -529,15 +529,15 @@ final class AppEnvironment {
             }
         }
         switch action {
-        case .goToRecentChat1: return "最近会话 1"
-        case .goToRecentChat2: return "最近会话 2"
-        case .nextChatNeedingAttention: return "待处理会话"
-        case .focusOtherAgent: return "切到另一个 agent"
-        case .openMenu: return "手柄菜单"
-        case .openAppSwitcher: return "程序切换器"
-        case .submit: return "提交"
-        case .cancelOrInterrupt: return "取消"
-        case .navigateUp, .navigateDown, .navigateLeft, .navigateRight: return "方向键"
+        case .goToRecentChat1: return "Recent Chat 1"
+        case .goToRecentChat2: return "Recent Chat 2"
+        case .nextChatNeedingAttention: return "Chat Needing Attention"
+        case .focusOtherAgent: return "Other Agent"
+        case .openMenu: return "Controller Menu"
+        case .openAppSwitcher: return "App Switcher"
+        case .submit: return "Submit"
+        case .cancelOrInterrupt: return "Cancel"
+        case .navigateUp, .navigateDown, .navigateLeft, .navigateRight: return "Arrow Keys"
         default: return action.rawValue
         }
     }
@@ -548,7 +548,7 @@ final class AppEnvironment {
         ) {
         case .codex: return "Codex"
         case .claudeCode: return "Claude"
-        case .genericTerminal: return "通用模式"
+        case .genericTerminal: return "Generic mode"
         }
     }
 
@@ -741,7 +741,7 @@ final class AppEnvironment {
                 "APP",
                 "Launch at Login \(enabled ? "register" : "unregister") failed: \(error.localizedDescription)"
             )
-            showFailure("开机自启\(enabled ? "打开" : "关闭")失败（\(error.localizedDescription)）")
+            showFailure("Couldn't \(enabled ? "enable" : "disable") Launch at Login (\(error.localizedDescription))")
         }
         onStatusChange?()
     }

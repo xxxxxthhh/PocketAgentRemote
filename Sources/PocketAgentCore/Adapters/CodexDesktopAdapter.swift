@@ -31,11 +31,11 @@ public struct CodexDesktopAdapter: ToolAdapter {
     /// Verified against the live menu / command registry (see `docs/codex-shortcuts.md`).
     public var menuItems: [AdapterMenuItem] {
         [
-            AdapterMenuItem(action: .newChat, title: "新建会话"),
-            AdapterMenuItem(action: .inspectChanges, title: "查看变更"),
-            AdapterMenuItem(action: .openTerminal, title: "打开终端"),
-            AdapterMenuItem(action: .openModelPicker, title: "切换模型"),
-            AdapterMenuItem(action: .archiveChat, title: "归档会话"),
+            AdapterMenuItem(action: .newChat, title: "New Chat"),
+            AdapterMenuItem(action: .inspectChanges, title: "Changes"),
+            AdapterMenuItem(action: .openTerminal, title: "Terminal"),
+            AdapterMenuItem(action: .openModelPicker, title: "Switch Model"),
+            AdapterMenuItem(action: .archiveChat, title: "Archive Chat"),
         ]
     }
 

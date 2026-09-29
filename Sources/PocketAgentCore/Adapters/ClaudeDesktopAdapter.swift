@@ -31,9 +31,9 @@ public struct ClaudeDesktopAdapter: ToolAdapter {
         [
             // Labels are Claude's own wording, so the menu reads like Claude's menu.
             // Evidence for each binding is recorded in `docs/research-claude-commands-verified.md`.
-            AdapterMenuItem(action: .newChat, title: "新建对话"),          // File > New Chat   ⌘N
-            AdapterMenuItem(action: .inspectChanges, title: "显示变更"),   // View > Show Changes ⌘⇧D
-            AdapterMenuItem(action: .openTerminal, title: "显示终端"),     // View > Show Terminal ⌘J
+            AdapterMenuItem(action: .newChat, title: "New Chat"),          // File > New Chat   ⌘N
+            AdapterMenuItem(action: .inspectChanges, title: "Show Changes"),   // View > Show Changes ⌘⇧D
+            AdapterMenuItem(action: .openTerminal, title: "Show Terminal"),     // View > Show Terminal ⌘J
         ]
     }
 
@@ -65,7 +65,7 @@ public struct ClaudeDesktopAdapter: ToolAdapter {
         case .openTerminal: return .supported(Recipe.tool(.j, [.command]))             // Show Terminal
 
         // `openModelPicker` is **deliberately unsupported**: Claude's bundle table says
-        // `openModelMenu = ⌘⇧I`, a user reported that choosing "切换模型" opened an *anonymous
+        // `openModelMenu = ⌘⇧I`, a user reported that choosing "Switch Model" opened an *anonymous
         // conversation*, and my own attempt to reproduce it saw no effect at all. The conflict is
         // unresolved in both directions, so the row is withheld — an unverified key that might
         // silently create an incognito chat is not worth the feature. Full write-up:

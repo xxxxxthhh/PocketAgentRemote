@@ -155,7 +155,7 @@ public enum AppMenuFilter {
 /// opens, and everything else keeps its original menu order one page down.
 public enum AppMenuBuilder {
     /// The 「更多」 row's label, and its page's title.
-    public static let morePageTitle = "更多"
+    public static let morePageTitle = "More"
     /// How many rows the root gets when the user has pinned nothing — enough to be worth looking
     /// at, short enough to read at a glance.
     public static let unpinnedRootLimit = 6

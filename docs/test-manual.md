@@ -13,7 +13,7 @@
 | M2 | A 键：连按两次不再把「长按」阈值推后；长按说话中途切 App / 改配置不再把右 ⌥ 卡住 | ✅ | ⬜ |
 | M3 | 菜单 / 切换器打开、关闭前后，按键不会泄漏到后面的窗口（这次是加了 12 个用例证明，没改代码） | ✅ | ⬜ |
 | M4 | 切换器里连按 ←→ 不再每按一下重建整个浮层；日志不再刷屏 | ✅ | ⬜ |
-| M5 | 被拦截 / 不支持 / 切换失败时，屏幕顶部弹 3 秒中文提示，以前是「按了没反应」 | ✅ | ⬜ |
+| M5 | 被拦截 / 不支持 / 切换失败时，屏幕顶部弹 3 秒英文提示，以前是「按了没反应」 | ✅ | ⬜ |
 | M6 | Codex 命令菜单可切换成「四向操作盘」实验布局（默认仍是列表） | ✅ | ⬜ |
 | 文档 | README / HANDOFF 里「A 短按按下即发 Enter」改成真实语义：**松开时发** | — | — |
 | M7 | `B+A` 改成退格，按住连续删（改语音识别错字用） | ✅ | ⬜ |
@@ -133,10 +133,10 @@ FOCUS   openAppSwitcher: focused … via appleScript in … ms
 
 | # | 怎么做 | 应该看到的提示 | 日志 |
 |---|---|---|---|
-| 5a | Auto 模式，**Chrome 在前台**，按 `B+↑` | `通用模式 不支持：最近会话 1` | `SKIP  goToRecentChat1: …` + `TOAST 通用模式 不支持：最近会话 1` |
-| 5b | Auto 模式，Chrome 前台，按 `B+←` | `打不开菜单：前台不是 agent` | `SKIP  openMenu: …` + `TOAST …` |
-| 5c | 菜单栏切 **Manual**，Profile 选 Codex，把 Finder 切到前台，按 `B+↑` | `已拦截：前台不是 agent（不在白名单）` | `DENY  goToRecentChat1: …` + `TOAST …` |
-| 5d | 切换器里选一个**切不过去**的程序（之前日志里微信失败过）按 A | `切换失败：微信（<原因>）` | `FOCUS … could not focus …` + `TOAST …` |
+| 5a | Auto 模式，**Chrome 在前台**，按 `B+↑` | `Generic mode doesn't support Recent Chat 1` | `SKIP  goToRecentChat1: …` + `TOAST Generic mode doesn't support Recent Chat 1` |
+| 5b | Auto 模式，Chrome 前台，按 `B+←` | `Can't open menu: frontmost app isn't an agent` | `SKIP  openMenu: …` + `TOAST …` |
+| 5c | 菜单栏切 **Manual**，Profile 选 Codex，把 Finder 切到前台，按 `B+↑` | `Blocked: frontmost app isn't an agent (not allowlisted)` | `DENY  goToRecentChat1: …` + `TOAST …` |
+| 5d | 切换器里选一个**切不过去**的程序（之前日志里微信失败过）按 A | `Switch failed: WeChat (<reason>)` | `FOCUS … could not focus …` + `TOAST …` |
 | 5e | 提示显示中按 B 轻按（Codex 前台） | Codex 收到 Escape，行为和没提示时一样；提示不因此消失 | `SEND … escape` |
 | 5f | 先触发 5a，3 秒内再触发一次 | 新文案替换旧文案，重新计 3 秒 | 两行 `TOAST` |
 | 5g | 开着 `B+←` 菜单时触发不了失败（菜单吃掉按键）——改为：开菜单前 1 秒先触发 5a，再立刻开菜单，等提示到期 | 提示消失后**菜单还在**，↑↓A 正常 | — |
@@ -150,11 +150,11 @@ FOCUS   openAppSwitcher: focused … via appleScript in … ms
 默认是 List；这个选择只在本次运行有效，重启 App 回到 List，配置文件不动。然后 **Codex 切到前台**，按 `B+←`。
 Claude 前台时开关无效，仍出原列表。
 
-**看到什么**：屏幕下方一块方形浮层，上「新建会话」、左「查看变更」、下「打开终端」、右「更多」，正中是 Codex，
+**看到什么**：屏幕下方一块方形浮层，上「New Chat」、左「Changes」、下「Terminal」、右「More」，正中是 Codex，
 底部一行 `方向选择 · A 执行 · B 关闭`。**刚打开时四个槽都不高亮**，这是有意的：表示还没选中任何东西。
 
 **怎么操作**：按一个方向 → 那个槽高亮（不执行）；按 A → 执行高亮的槽，浮层关闭。
-`→` 再 `A` 进「更多」（竖列表：切换模型 / 归档会话），里面 `↑↓` 选、`A` 执行、`B` 回到四向盘（回来时又是无高亮）。
+`→` 再 `A` 进「More」（竖列表：Switch Model / Archive Chat），里面 `↑↓` 选、`A` 执行、`B` 回到四向盘（回来时又是无高亮）。
 四向盘上按 `B` 关闭整个菜单。没选中时按 A 什么都不发生，菜单也不关。切前台 App 会关掉整个菜单含子页。
 
 | # | 怎么做 | 应该看到 | 日志 |
@@ -163,9 +163,9 @@ Claude 前台时开关无效，仍出原列表。
 | 6b | 按 ↑ 然后 ← 然后 ↓ | 高亮跟着方向跳，**不执行** | 无 SEND |
 | 6c | 开 Dial 后不按方向直接按 A | 什么都不发生，菜单还在 | 无 SEND、无 closed |
 | 6d | ↓ 然后 A | Codex 打开终端，菜单关闭 | `MENU  running openTerminal (打开终端) → ⌃\`` |
-| 6e | → 然后 A | 进「更多」竖列表，两项 | `MENU  更多 page opened with 2 items` |
-| 6f | 在「更多」里按 B | 回到四向盘，无高亮；Codex **没收到 Escape** | `MENU  back to the dial`，无 SEND escape |
-| 6g | 在「更多」里 ↓ 选归档 → 别按 A，按 B 回来，再 B | 菜单关闭；没有归档任何会话 | `MENU  closed by B` |
+| 6e | → 然后 A | 进「More」竖列表，两项 | `MENU  More page opened with 2 items` |
+| 6f | 在「More」里按 B | 回到四向盘，无高亮；Codex **没收到 Escape** | `MENU  back to the dial`，无 SEND escape |
+| 6g | 在「More」里 ↓ 选归档 → 别按 A，按 B 回来，再 B | 菜单关闭；没有归档任何会话 | `MENU  closed by B` |
 | 6h | 开 Dial → 鼠标点 Chrome | 菜单消失 | `MENU  closed` |
 | 6i | 开 Dial → ↑ → A 按住 1.5 秒再松 | 只新建一次会话；**不**触发录音 | 一条 `SEND … ⌘N`，无 rightOption |
 | 6j | 切回 List，再 `B+←` | 回到原来的竖列表，第一项默认选中 | `opened for … with 5 items` |
@@ -212,7 +212,7 @@ Claude 前台时开关无效，仍出原列表。
 | 8b | 8a 的 2 秒等待期间按 ←→ 或 B 长按 | 手柄立刻有反应（以前这 3 秒是冻住的） | 等待期间有正常的 `SEND` / `MENU` 行 |
 | 8c | 切换器选 Codex / Claude / iTerm 按 A | 和以前一样快，没有变慢 | `focused … in 40–150 ms` |
 | 8d | 菜单栏 → `Focus Other Agent Now` | 切到另一个 agent；菜单栏 `Last switch:` 在切换完成后才更新 | `FOCUS manual: focused …` |
-| 8e | 把微信**退出**，切换器里它不会出现；若刚退出还在列表里就选它按 A | 立刻弹「切换失败：微信（app is not running）」，不等 4 秒 | `could not focus … app is not running` |
+| 8e | 把微信**退出**，切换器里它不会出现；若刚退出还在列表里就选它按 A | 立刻弹「Switch failed: WeChat (app is not running)」，不等 4 秒 | `could not focus … app is not running` |
 | 8f | （可选）找一个真的切不过去的目标 | 4 秒后才弹失败，提示里有两种方法各自的耗时 | `could not focus X (appleScript✗ 4xxx ms → runningApplication✗ 1xxx ms)` |
 
 **判定**：8a 无提示且日志是 `focused`，8b 不冻手柄。8f 找不到目标就跳过。
@@ -263,7 +263,7 @@ Claude 前台时开关无效，仍出原列表。
 
 **是什么**：前台不是 Codex / Claude 时，`B+←` 不再提示「打不开菜单」，而是读出该 App **自己菜单栏**里的操作，
 过滤掉危险项和样板项后列出来，A 直接执行（通过辅助功能 API 按菜单项，不合成快捷键，所以 App 在后台也能按）。
-微信自带四条收藏排最前：`Show Next Unread Chat`、`Show Next Chat`、`Show Previous Chat`、`Search`；其余进「更多」。
+微信自带四条收藏排最前：`Show Next Unread Chat`、`Show Next Chat`、`Show Previous Chat`、`Search`；其余进「More」。
 
 **收藏怎么改**：`Open Config File`，加 `"appMenuFavorites": { "com.tencent.xinWeChat": ["Show/Show Next Unread Chat", "Edit/Search"] }`，
 路径是「顶级菜单/子菜单/项」，用 `swift Tools/press-menu-item.swift com.tencent.xinWeChat list` 能看到所有路径。
@@ -271,18 +271,18 @@ Claude 前台时开关无效，仍出原列表。
 
 | # | 怎么做 | 应该看到 | 日志 |
 |---|---|---|---|
-| 12a | 微信前台，`B+←` | 竖列表，标题「WeChat」或「Weixin」（取 App 自己报的名字），第一项 `Show Next Unread Chat`，末尾一行「更多」 | `MENU  opened app menu for com.tencent.xinWeChat with N items`，无 SEND |
+| 12a | 微信前台，`B+←` | 竖列表，标题「WeChat」或「Weixin」（取 App 自己报的名字），第一项 `Show Next Unread Chat`，末尾一行「More」 | `MENU  opened app menu for com.tencent.xinWeChat with N items`，无 SEND |
 | 12b | 有未读会话时，A 执行第一项 | 微信跳到下一个未读会话；浮层关闭 | `MENU  pressing Show › Show Next Unread Chat in com.tencent.xinWeChat`，**无 SEND** |
-| 12c | ↓ 到「更多」→ A | 进入第二页竖列表：File / Show / Window 里剩下的项 | `MENU  更多 page opened with N items` |
-| 12d | 在「更多」里 B | 回到第一页；微信**没收到 Escape** | `MENU  back to WeChat`，无 SEND |
+| 12c | ↓ 到「More」→ A | 进入第二页竖列表：File / Show / Window 里剩下的项 | `MENU  More page opened with N items` |
+| 12d | 在「More」里 B | 回到第一页；微信**没收到 Escape** | `MENU  back to WeChat`，无 SEND |
 | 12e | 第一页 B | 菜单关闭 | `MENU  closed by B` |
 | 12f | 翻遍两页 | **看不到** Quit / Exit / Lock / Close / Hide / Log Out / Minimize / Copy / Paste 这类项 | — |
-| 12g | 「更多」里选一个当前灰掉的项（比如没选中会话时的 Pin/Unpin）→ A | 顶部提示「菜单项已不可用」，菜单关闭 | `SKIP  openMenu: app menu item is disabled …` + `TOAST` |
+| 12g | 「More」里选一个当前灰掉的项（比如没选中会话时的 Pin/Unpin）→ A | 顶部提示「Menu item is unavailable」，菜单关闭 | `SKIP  openMenu: app menu item is disabled …` + `TOAST` |
 | 12h | Chrome 前台 `B+←` | 也能开出菜单（第一次可能慢 0.1–0.2 秒，Chrome 菜单很大） | `opened app menu for com.google.Chrome` |
 | 12i | Finder 前台 `B+←` | 能开出菜单 | 同上 |
-| 12j | Codex 前台 `B+←` | **仍是原来的命令菜单**（新建会话…），不是通用菜单 | `opened for com.openai.codex with 5 items` |
+| 12j | Codex 前台 `B+←` | **仍是原来的命令菜单**（New Chat…），不是通用菜单 | `opened for com.openai.codex with 5 items` |
 | 12k | 开着微信菜单时用鼠标点 Chrome，再回来看 | 菜单已关；Chrome 没收到任何键 | `MENU  closed` |
-| 12l | 访达开两个窗口 A、B。在 A 里 `B+←` 开菜单 → **用鼠标点到窗口 B**（浮层还在，因为还是访达）→ A 执行任意一项 | 顶部提示「已拦截：窗口已切换，菜单项未执行」；菜单随即关闭，要重新 `B+←` | `DENY  openMenu: app menu context changed …` + `TOAST` |
+| 12l | 访达开两个窗口 A、B。在 A 里 `B+←` 开菜单 → **用鼠标点到窗口 B**（浮层还在，因为还是访达）→ A 执行任意一项 | 顶部提示「Blocked: window changed, menu item not run」；菜单随即关闭，要重新 `B+←` | `DENY  openMenu: app menu context changed …` + `TOAST` |
 | 12n | Chrome 前台 `B+←` → ↓ 到「更多」→ A → 连按 ↓ 20 次 | 子页最多显示 8–10 行（按屏高算），不再撑满屏幕；高亮到底后列表随之滚动，标题显示 `更多 · 12/41` 之类的序号；长标题末尾省略号，不溢出右边 | 无新日志；`OVERLAY session ended: rebuild=1 …`（滚动不重建） |
 | 12m | 让某个 App 假死（例如在终端 `kill -STOP <pid>` 一个不重要的 App）后切到它前台，`B+←` | 最多约 1 秒内弹「打不开菜单：前台不是 agent」之类的提示，手柄**不卡**（读取到点后不再发消息，但一条在途消息最多再等 0.5 秒）；之后 `kill -CONT <pid>` 恢复 | `SKIP  openMenu: …`；无长时间空白 |
 

@@ -69,7 +69,7 @@ final class AppMenuFlowTests: XCTestCase {
 
         XCTAssertEqual(reader.openedFor, [],
                        "Codex has a command menu, so its menu bar is never read. Log: \(rig.log())")
-        XCTAssertTrue(rig.dispatcher.openMenu?.items.contains { $0.title == "新建会话" } == true,
+        XCTAssertTrue(rig.dispatcher.openMenu?.items.contains { $0.title == "New Chat" } == true,
                       "the shipped Codex list. Log: \(rig.log())")
         XCTAssertTrue(rig.log().contains { $0.contains("MENU  opened for \(codex)") })
     }
@@ -239,7 +239,7 @@ final class AppMenuFlowTests: XCTestCase {
         XCTAssertEqual(reader.openedFor, [safari],
                        "paging back and forth must not re-read the menu bar. Log: \(rig.log())")
         XCTAssertEqual(reader.sessions.count, 1)
-        XCTAssertEqual(rig.dispatcher.openMenu?.title, "更多", "and the page is still navigable")
+        XCTAssertEqual(rig.dispatcher.openMenu?.title, "More", "and the page is still navigable")
 
         rig.press(.a, at: 0.6)                      // a row on the page presses through that session
         XCTAssertEqual(reader.pressedIDs, [1], "Log: \(rig.log())")
@@ -273,26 +273,26 @@ final class AppMenuFlowTests: XCTestCase {
         defer { rig.engine.stop() }
         openGeneralMenu(rig)
 
-        XCTAssertEqual(rig.dispatcher.openMenu?.items.map(\.title), ["下一条未读消息", "更多"])
+        XCTAssertEqual(rig.dispatcher.openMenu?.items.map(\.title), ["下一条未读消息", "More"])
 
         rig.press(.down, at: 0.2)
         rig.release(.down, at: 0.25)
         rig.press(.a, at: 0.3)                      // turn the page
 
         XCTAssertTrue(rig.engine.isMenuOpen, "a page turn is not a choice. Log: \(rig.log())")
-        XCTAssertEqual(rig.dispatcher.openMenu?.title, "更多")
+        XCTAssertEqual(rig.dispatcher.openMenu?.title, "More")
         XCTAssertEqual(rig.dispatcher.openMenu?.layout, .list, "a page of a list is still a list")
         XCTAssertEqual(rig.dispatcher.openMenu?.items.map(\.title), ["查找", "最小化"])
         XCTAssertEqual(rig.dispatcher.openMenu?.selectedItem?.title, "查找", "a list opens on a row")
-        XCTAssertTrue(rig.log().contains { $0.contains("MENU  更多 page opened with 2 items") },
+        XCTAssertTrue(rig.log().contains { $0.contains("MENU  More page opened with 2 items") },
                       "Log: \(rig.log())")
 
         rig.release(.a, at: 0.35)
         rig.press(.b, at: 0.4)                      // back to the root page
 
         XCTAssertTrue(rig.engine.isMenuOpen, "B on a page goes back, it does not close")
-        XCTAssertEqual(rig.dispatcher.openMenu?.items.map(\.title), ["下一条未读消息", "更多"])
-        XCTAssertEqual(rig.dispatcher.openMenu?.selectedItem?.title, "更多",
+        XCTAssertEqual(rig.dispatcher.openMenu?.items.map(\.title), ["下一条未读消息", "More"])
+        XCTAssertEqual(rig.dispatcher.openMenu?.selectedItem?.title, "More",
                        "and lands back on the row that opened the page")
 
         rig.release(.b, at: 0.45)
@@ -441,8 +441,8 @@ final class AppMenuFlowTests: XCTestCase {
     private func pagedAppMenu(_ bundleID: String?, _ entries: [AppMenuEntry]) -> AgentMenu? {
         guard let flat = flatAppMenu(bundleID, entries), flat.items.count > 1 else { return nil }
         let more = MenuItem(
-            choice: .openSubmenu(title: "更多", items: Array(flat.items.dropFirst())),
-            title: "更多"
+            choice: .openSubmenu(title: "More", items: Array(flat.items.dropFirst())),
+            title: "More"
         )
         return AgentMenu(bundleID: bundleID, title: flat.title, items: [flat.items[0], more])
     }

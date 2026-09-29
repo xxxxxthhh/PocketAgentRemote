@@ -20,12 +20,12 @@
 | A 按住说话 | 豆包语音输入，松开结束；这次按压不会提交 |
 | B 轻按 | 取消 / 拒绝（Escape） |
 | B 按住半秒 | 弹出**程序切换器**，←→ 选、A 切过去；在任何 App 下都能用 |
-| B + ← | 弹出**命令菜单**：新建会话、查看变更、打开终端、切换模型、归档会话（按前台 App 变） |
+| B + ← | 弹出**命令菜单**：New Chat、Changes、Terminal、Switch Model、Archive Chat（按前台 App 变） |
 | B + ↑ / ↓ | 跳到最近会话 1 / 2（Codex）或上一个 / 下一个会话（Claude） |
 | B + → | 跳到需要你处理的会话（Codex）/ 命令面板（Claude） |
 | B + A | **退格**：删掉光标前一个字；按住不放连续删（改语音识别错的字用） |
 | 什么都不按 | profile 跟着前台 App 自动切；切到浏览器就只剩方向键和 Enter / Esc |
-| 按了没反应 | 屏幕顶部弹 3 秒中文提示告诉你为什么（被拦、不支持、切换失败） |
+| 按了没反应 | 屏幕顶部弹 3 秒英文提示告诉你为什么（被拦、不支持、切换失败） |
 | 手柄不在手边 | 菜单栏 → `Show Controller Menu` / `Show App Switcher` 是同一套菜单 |
 | 在微信 / 浏览器 / 访达里按 B + ← | 弹出**那个 App 自己菜单栏**里的操作，A 直接执行；微信默认把「下一个未读会话」「搜索」放最前。危险项（退出、关闭、删除…）永远不列出 |
 | 合盖、重启、权限被收走 | 醒来接着用，不会卡键；开机自动启动（菜单栏里可关）；辅助功能权限掉了屏幕会提示、菜单栏图标变警告 |
@@ -166,11 +166,11 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 ┌───────────────────────────┐
 │  Codex                    │
 │                           │
-│  ▸ 新建会话               │
-│    查看变更               │
-│    打开终端               │
+│  ▸ New Chat               │
+│    Changes                │
+│    Terminal               │
 │                           │
-│  ↑↓ 选择   A 执行   B 关闭 │
+│  ↑↓ Select  A Run  B Close│
 └───────────────────────────┘
 ```
 
@@ -192,8 +192,8 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 
 | App | 菜单 |
 |---|---|
-| Codex | 新建会话 / 查看变更 / 打开终端 / 切换模型 / 归档会话 |
-| Claude | 新建对话（`⌘N`，实测菜单确认） |
+| Codex | New Chat / Changes / Terminal / Switch Model / Archive Chat |
+| Claude | New Chat（`⌘N`，实测菜单确认） |
 
 ---
 
@@ -226,8 +226,8 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 - 不想用手柄时：**菜单栏 → `Show App Switcher`** 是同一入口。
 
 **实验：四向操作盘（Dial）。** 菜单栏 → `Command Menu: List / Dial (experimental)` 勾 Dial，
-Codex 前台按 `B+←` 出来的不再是竖列表，而是上「新建会话」、左「查看变更」、下「打开终端」、右「更多」四个方向槽：
-按一个方向选中，再按 A 执行；「更多」里是切换模型 / 归档会话，B 回到操作盘。刚打开时**什么都不选中**，
+Codex 前台按 `B+←` 出来的不再是竖列表，而是上「New Chat」、左「Changes」、下「Terminal」、右「More」四个方向槽：
+按一个方向选中，再按 A 执行；「More」里是 Switch Model / Archive Chat，B 回到操作盘。刚打开时**什么都不选中**，
 所以打开菜单的那下 ← 不会误选。默认仍是列表，这个选择重启后失效；要不要改成默认，等对照测试有数据再定。
 
 > Claude 侧暂时只有一项，是有原因的：其余命令要么键位未验证，要么在**普通 chat 语境下被
@@ -240,19 +240,19 @@ Codex 前台按 `B+←` 出来的不再是竖列表，而是上「新建会话�
 
 ## 屏幕提示
 
-按了没反应，以前只能翻日志；现在屏幕顶部会弹一条 3 秒的中文提示，例如：
+按了没反应，以前只能翻日志；现在屏幕顶部会弹一条 3 秒的英文提示，例如：
 
 ```text
-通用模式 不支持：最近会话 1        ← 在浏览器里按了 B+↑
-打不开菜单：前台不是 agent          ← 在浏览器里按了 B+←
-已拦截：前台不是 agent（不在白名单）  ← 手动模式下发给了白名单外的 App
-切换失败：微信（…原因…）            ← 程序切换器切不过去
+Generic mode doesn't support Recent Chat 1              ← 在浏览器里按了 B+↑
+Can't open menu: frontmost app isn't an agent           ← 在浏览器里按了 B+←
+Blocked: frontmost app isn't an agent (not allowlisted) ← 手动模式下发给了白名单外的 App
+Switch failed: WeChat (…reason…)                        ← 程序切换器切不过去
 ```
 
 - 只报**没发生**的事；成功的动作不弹，你看目标 App 就知道。
 - 提示不接管任何按键：显示期间按 B 还是 Escape，按方向还是方向。
 - 3 秒后自己消失；新提示替换旧提示。不能手动关，也没有配置项。
-- 「切换失败」只在目标程序 4 秒内都没到前台时才弹；切换请求在后台发，等待期间手柄照常可用。
+- 「Switch failed」只在目标程序 4 秒内都没到前台时才弹；切换请求在后台发，等待期间手柄照常可用。
   微信这类回应慢的程序（约 2 秒）现在会正常切过去，不再误报。
 - 菜单打开时提示出现在屏幕顶部，不和菜单重叠，到期也不会关掉菜单。
 

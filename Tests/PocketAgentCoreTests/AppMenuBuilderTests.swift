@@ -59,7 +59,7 @@ final class AppMenuBuilderTests: XCTestCase {
         )
     }
 
-    /// Every row the menu draws, the 「更多」 page included.
+    /// Every row the menu draws, the "More" page included.
     private func allTitles(_ menu: AgentMenu) -> [String] {
         menu.items.flatMap { item -> [String] in
             guard let page = item.submenu else { return [item.title] }
@@ -134,7 +134,7 @@ final class AppMenuBuilderTests: XCTestCase {
         XCTAssertEqual(AppMenuFilter.displayable(reachable), [], "and none of them survives together either")
     }
 
-    /// Chrome's Window menu is where the 41-row 「更多」 page came from: a row per window, and above
+    /// Chrome's Window menu is where the 41-row "More" page came from: a row per window, and above
     /// them a block of arrangement rows that the exact titles `Minimize` / `Zoom` walked past.
     func testTheWindowMenusOwnFurnitureIsFilteredOut() {
         let furniture = [
@@ -248,7 +248,7 @@ final class AppMenuBuilderTests: XCTestCase {
         guard let menu = menu(favorites: weChatFavorites) else { return XCTFail("WeChat must get a menu") }
 
         XCTAssertEqual(menu.items.map(\.title), [
-            "Show Next Unread Chat", "Show Next Chat", "Show Previous Chat", "Search", "更多",
+            "Show Next Unread Chat", "Show Next Chat", "Show Previous Chat", "Search", "More",
         ], "config order wins over menu order, and everything else is one page down")
         XCTAssertEqual(
             menu.items.first?.choice,
@@ -268,23 +268,23 @@ final class AppMenuBuilderTests: XCTestCase {
         let titles = allTitles(menu)
         XCTAssertFalse(titles.contains("Quit WeChat"))
         XCTAssertFalse(titles.contains("Close Window"))
-        XCTAssertEqual(menu.items.map(\.title), ["Search", "更多"], "only the legal favourite is pinned")
+        XCTAssertEqual(menu.items.map(\.title), ["Search", "More"], "only the legal favourite is pinned")
     }
 
     func testFavouritesThatNoLongerMatchFallBackToTheHeadOfTheMenu() {
         // Every favourite points at a row this app does not have (renamed, or destructive). A lone
-        // 「更多」 row would be the worst possible answer.
+        // "More" row would be the worst possible answer.
         let menu = menu(favorites: ["Show/Show Moments", "WeChat/Quit WeChat"])
         guard let menu else { return XCTFail("WeChat must get a menu") }
 
         XCTAssertEqual(menu.items.map(\.title), [
-            "About WeChat", "Settings…", "New Chat", "Search", "Show Next Unread Chat", "Show Next Chat", "更多",
+            "About WeChat", "Settings…", "New Chat", "Search", "Show Next Unread Chat", "Show Next Chat", "More",
         ], "same as having configured nothing: the first six rows, then the page")
     }
 
     func testRepeatedAndUnknownFavouritesAreSkippedRatherThanDuplicated() {
         let menu = menu(favorites: ["Edit/Search", "Edit/Search", "Show/Nothing Like This"])
-        XCTAssertEqual(menu?.items.map(\.title), ["Search", "更多"])
+        XCTAssertEqual(menu?.items.map(\.title), ["Search", "More"])
     }
 
     // MARK: - Shape
@@ -292,7 +292,7 @@ final class AppMenuBuilderTests: XCTestCase {
     func testWithoutFavouritesTheRootIsTheFirstSixRowsAndTheRestIsOnePageDown() {
         guard let menu = menu() else { return XCTFail("WeChat must get a menu") }
 
-        XCTAssertEqual(menu.items.count, 7, "six rows plus 「更多」")
+        XCTAssertEqual(menu.items.count, 7, "six rows plus More")
         XCTAssertEqual(menu.items.map(\.title).dropLast(), [
             "About WeChat", "Settings…", "New Chat", "Search", "Show Next Unread Chat", "Show Next Chat",
         ])
@@ -303,7 +303,7 @@ final class AppMenuBuilderTests: XCTestCase {
 
     func testTheMorePageIsExactlyOneLevelDeep() {
         guard let page = menu(favorites: weChatFavorites)?.items.last?.submenu else {
-            return XCTFail("there must be a 「更多」 page")
+            return XCTFail("there must be a More page")
         }
         for item in page.items {
             XCTAssertNil(item.submenu, "「\(item.title)」 must be a press, not another page")
@@ -320,7 +320,7 @@ final class AppMenuBuilderTests: XCTestCase {
         ]
         guard let menu = menu(entries: short) else { return XCTFail("two rows are still a menu") }
         XCTAssertEqual(menu.items.map(\.title), ["Show Next Chat", "Show Previous Chat"])
-        XCTAssertNil(menu.items.last?.submenu, "no empty 「更多」")
+        XCTAssertNil(menu.items.last?.submenu, "no empty More page")
     }
 
     func testCollidingTitlesOnThePageAreQualifiedByTheirMenu() {
@@ -331,7 +331,7 @@ final class AppMenuBuilderTests: XCTestCase {
             AppMenuEntry(id: 3, path: ["Show", "Pin"]),
         ]
         guard let page = menu(favorites: ["Show/Pin"], entries: entries)?.items.last?.submenu else {
-            return XCTFail("there must be a 「更多」 page")
+            return XCTFail("there must be a More page")
         }
         XCTAssertEqual(page.items.map(\.title), ["Export…", "View › Sidebar", "Show › Sidebar"],
                        "only the ambiguous pair is qualified; the app's own wording stays elsewhere")
@@ -346,7 +346,7 @@ final class AppMenuBuilderTests: XCTestCase {
         XCTAssertTrue(menu.hasSelection, "a list opens on a row, so B+← then A is one gesture")
         XCTAssertEqual(menu.title, "微信", "the header is the app's own name")
         XCTAssertEqual(menu.bundleID, weChat, "held so the choice can be refused when focus moves on")
-        XCTAssertEqual(menu.hint, "↑↓ 选择    A 执行    B 关闭")
+        XCTAssertEqual(menu.hint, "↑↓ Select    A Run    B Close")
     }
 
     func testNilWhenNothingSurvivesTheFilter() {

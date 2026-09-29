@@ -135,9 +135,9 @@ public struct AgentMenu {
     /// The hint line along the bottom, so the controls never have to be remembered.
     public var hint: String {
         switch layout {
-        case .list: return "↑↓ 选择    A 执行    B 关闭"
-        case .strip: return "←→ 选择    A 切换    B 关闭"
-        case .dial: return "方向选择 · A 执行 · B 关闭"
+        case .list: return "↑↓ Select    A Run    B Close"
+        case .strip: return "←→ Select    A Switch    B Close"
+        case .dial: return "Arrows Select · A Run · B Close"
         }
     }
 
@@ -252,7 +252,7 @@ public enum AgentMenuBuilder {
 /// come from `CodexDesktopAdapter.menuItems` so the dial and the list call the same action the same
 /// thing, and every slot is checked against the adapter before the dial is offered at all.
 public enum AgentDialBuilder {
-    /// ↑ 新建会话 · ← 查看变更 · ↓ 打开终端 · → 更多（切换模型 / 归档会话）.
+    /// ↑ New Chat · ← Changes · ↓ Terminal · → More (Switch Model / Archive Chat).
     ///
     /// Nil for anything but Codex — that is what keeps Claude on the list — and nil when any one
     /// slot's action is unrunnable. A dial with a hole in it would break the promise that a
@@ -282,8 +282,8 @@ public enum AgentDialBuilder {
 
         // One level only: the page's own rows are plain actions, never another page.
         let more = MenuItem(
-            choice: .openSubmenu(title: "更多", items: [model, archive]),
-            title: "更多"
+            choice: .openSubmenu(title: AppMenuBuilder.morePageTitle, items: [model, archive]),
+            title: AppMenuBuilder.morePageTitle
         )
         let name = config.agentPair.name(for: frontmostBundleID ?? "")
             ?? frontmostName
@@ -323,7 +323,7 @@ public enum AppSwitcherBuilder {
     public static func menu(apps: [RunningApp], frontmostBundleID: String?) -> AgentMenu? {
         guard apps.count >= 2 else { return nil }
         let rows = apps.map { MenuItem(choice: .activateApp(bundleID: $0.bundleID), title: $0.name) }
-        return AgentMenu(bundleID: frontmostBundleID, title: "切换程序", items: rows, selection: 1, layout: .strip)
+        return AgentMenu(bundleID: frontmostBundleID, title: "Switch App", items: rows, selection: 1, layout: .strip)
     }
 }
 

@@ -9,7 +9,7 @@ import XCTest
 /// - the chord that opened the menu must be fully consumed, so the dial opens armed with nothing;
 /// - a direction arms a slot and runs nothing;
 /// - A on an unarmed dial does nothing at all, and does not cost the menu;
-/// - 「更多」 is a page turn, and B on that page comes back instead of closing;
+/// - "More" is a page turn, and B on that page comes back instead of closing;
 /// - the action itself still goes through the adapter, the guard and the frontmost re-check.
 final class DialMenuTests: XCTestCase {
     private let codex = "com.openai.codex"
@@ -48,12 +48,12 @@ final class DialMenuTests: XCTestCase {
         XCTAssertEqual(dial.layout, .dial)
         XCTAssertFalse(dial.hasSelection, "a dial opens with nothing armed")
         XCTAssertNil(dial.selectedItem, "so there is nothing to run")
-        XCTAssertEqual(dial.items.map(\.title), ["新建会话", "查看变更", "打开终端", "更多"],
+        XCTAssertEqual(dial.items.map(\.title), ["New Chat", "Changes", "Terminal", "More"],
                        "items are in dialSlotOrder: ↑ ← ↓ →")
         XCTAssertEqual(AgentMenu.dialSlotOrder, [.up, .left, .down, .right])
-        XCTAssertEqual(dial.items.last?.submenu?.items.map(\.title), ["切换模型", "归档会话"],
-                       "「更多」 carries its page, model picker first")
-        XCTAssertEqual(dial.hint, "方向选择 · A 执行 · B 关闭")
+        XCTAssertEqual(dial.items.last?.submenu?.items.map(\.title), ["Switch Model", "Archive Chat"],
+                       "More carries its page, model picker first")
+        XCTAssertEqual(dial.hint, "Arrows Select · A Run · B Close")
     }
 
     func testOnlyCodexGetsADial() {
@@ -121,7 +121,7 @@ final class DialMenuTests: XCTestCase {
         openDial(rig)
 
         let expected: [(PhysicalButton, String)] = [
-            (.up, "新建会话"), (.left, "查看变更"), (.down, "打开终端"), (.right, "更多"),
+            (.up, "New Chat"), (.left, "Changes"), (.down, "Terminal"), (.right, "More"),
         ]
         var t = 0.2
         for (button, title) in expected {
@@ -150,7 +150,7 @@ final class DialMenuTests: XCTestCase {
             guard let latest = published().last ?? nil else { return XCTFail("press \(step) published nothing") }
             XCTAssertTrue(opened.hasSameStructure(as: latest), "only the highlight changes")
         }
-        XCTAssertEqual(rig.dispatcher.openMenu?.selectedItem?.title, "打开终端")
+        XCTAssertEqual(rig.dispatcher.openMenu?.selectedItem?.title, "Terminal")
     }
 
     // MARK: - A
@@ -176,9 +176,9 @@ final class DialMenuTests: XCTestCase {
     /// A on an armed slot: exactly one recipe, exactly once, and the dial closes.
     func testAOnAnArmedSlotRunsExactlyThatRecipeOnce() {
         for (button, stroke, title) in [
-            (PhysicalButton.up, newChat, "新建会话"),
-            (.left, inspectChanges, "查看变更"),
-            (.down, openTerminal, "打开终端"),
+            (PhysicalButton.up, newChat, "New Chat"),
+            (.left, inspectChanges, "Changes"),
+            (.down, openTerminal, "Terminal"),
         ] {
             let rig = makeDialRig()
             defer { rig.engine.stop() }
@@ -217,7 +217,7 @@ final class DialMenuTests: XCTestCase {
         )
     }
 
-    // MARK: - 「更多」 and back
+    // MARK: - "More" and back
 
     func testRightThenAOpensTheMorePageAndBComesBackWithoutEscape() {
         let rig = makeDialRig()
@@ -230,8 +230,8 @@ final class DialMenuTests: XCTestCase {
 
         XCTAssertTrue(rig.engine.isMenuOpen, "a page turn is not a choice")
         XCTAssertEqual(rig.dispatcher.openMenu?.layout, .list, "the page is the ordinary list")
-        XCTAssertEqual(rig.dispatcher.openMenu?.items.map(\.title), ["切换模型", "归档会话"])
-        XCTAssertEqual(rig.dispatcher.openMenu?.selectedItem?.title, "切换模型", "a list opens on a row")
+        XCTAssertEqual(rig.dispatcher.openMenu?.items.map(\.title), ["Switch Model", "Archive Chat"])
+        XCTAssertEqual(rig.dispatcher.openMenu?.selectedItem?.title, "Switch Model", "a list opens on a row")
         XCTAssertEqual(rig.emitter.emissions, [], "turning a page runs nothing")
 
         rig.release(.a, at: 0.35)
