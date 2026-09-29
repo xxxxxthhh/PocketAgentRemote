@@ -2,6 +2,12 @@
 
 把手柄（IINE 良值 L1162）变成 macOS 上 **Codex 桌面 App / Claude 桌面 App** 的遥控器。
 
+<p align="center">
+  <a href="docs/media/intro-720p.mp4"><img src="docs/media/poster.jpg" width="720" alt="PocketAgentRemote 介绍视频封面"></a><br>
+  <b>Your agents, one pocket away.</b><br>
+  ▶ <a href="docs/media/intro-720p.mp4">107 秒介绍视频</a>（英文解说 + 字幕，覆盖全部功能；竖屏版与源码见 <a href="promo/README.md"><code>promo/</code></a>）
+</p>
+
 > 当前生效的规格：`docs/spec-v0.3.md`
 > Phase 0 硬件实测：`docs/phase0-summary.md` · Phase 1 真机验证：`docs/phase1-verification.md`
 > **需要你亲自测的项：`docs/test-manual.md`**（2026-09-18 批次）· 更早的：`docs/pending-user-tests.md`
@@ -162,6 +168,8 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 
 高频动作凭手感直达，低频动作看着菜单选 —— 手柄只有 12 个手势，菜单是继续扩展的唯一方向。
 
+<p align="center"><img src="docs/media/command-menu.gif" width="640" alt="B+← 打开命令菜单，↓ 逐项选择，再切到四向操作盘"></p>
+
 ```text
 ┌───────────────────────────┐
 │  Codex                    │
@@ -193,7 +201,7 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 | App | 菜单 |
 |---|---|
 | Codex | New Chat / Changes / Terminal / Switch Model / Archive Chat |
-| Claude | New Chat（`⌘N`，实测菜单确认） |
+| Claude | New Chat（`⌘N`）/ Show Changes（`⌘⇧D`）/ Show Terminal（`⌘J`）—— 三项都经运行中菜单 + App 内快捷键表双重印证 |
 
 ---
 
@@ -230,10 +238,10 @@ Codex 前台按 `B+←` 出来的不再是竖列表，而是上「New Chat」、
 按一个方向选中，再按 A 执行；「More」里是 Switch Model / Archive Chat，B 回到操作盘。刚打开时**什么都不选中**，
 所以打开菜单的那下 ← 不会误选。默认仍是列表，这个选择重启后失效；要不要改成默认，等对照测试有数据再定。
 
-> Claude 侧暂时只有一项，是有原因的：其余命令要么键位未验证，要么在**普通 chat 语境下被
-> Claude 自己灰显**（`View > Show Terminal`、`View > Show Changes` 都是 `[OFF]`，它们属于
-> Code 会话）。宁可少一行，也不要出现「选了做错事」的一行 —— `⌘⇧I` 就曾以「切换模型」的名义
-> 在 Claude 里开出匿名会话。
+> Claude 侧只列这三项，是有原因的：其余命令键位未经双重印证。宁可少一行，也不要出现
+> 「选了做错事」的一行 —— `⌘⇧I` 就曾以「切换模型」的名义在 Claude 里开出匿名会话。
+> 注意 Show Changes / Show Terminal 属于 Code 会话，**在普通 chat 语境下会被 Claude 自己灰显**
+> （菜单导出里是 `[OFF]`），这时按了没反应是 Claude 的行为，证据见 `docs/research-claude-commands-verified.md`。
 > Claude 里想切模型/用其他命令，`B+→` 的**命令面板**（`⌘K`）仍然直达。
 
 ---
@@ -411,6 +419,9 @@ docs/hardware-probe.md         Phase 0 原始记录
 docs/phase1-verification.md    Phase 1 真机验证记录
 docs/research-*.md             Codex / Claude / Codex Micro 调研
 docs/research-claude-commands-verified.md  Claude 命令键位的实测记录（含证据强度分级）
+docs/media/                    README 用的介绍视频（720p）、封面与动图
+
+promo/                         介绍视频的源码：动画页 + 配音 + 配乐 + 渲染脚本（见 promo/README.md）
 
 Sources/PocketAgentCore/       全部逻辑（可单测，无 UI 依赖）
 Sources/PocketAgentCore/Focus/ 切前台 App（AppActivator + 两个 agent 的切换规则）
@@ -427,7 +438,7 @@ scripts/make-app.sh            构建探针 App
 
 ```bash
 swift build
-swift test                                  # 292 个测试
+swift test                                  # 345 个测试
 ./.build/debug/coresmoke --duration 60      # 真机看手势链路（只打日志）
 ./.build/debug/agentprobe watch             # 看原始 HID 报告
 swift Tools/dump-menu-accelerators.swift ChatGPT   # 导出 Codex 的真实菜单快捷键
@@ -436,6 +447,8 @@ swift Tools/dump-menu-accelerators.swift ChatGPT   # 导出 Codex 的真实菜�
 > 如果 `swift build` 报 `sandbox_apply: Operation not permitted`（SwiftPM 的嵌套沙箱被外层沙箱拒绝），
 > 加 `--disable-sandbox` 即可；`scripts/make-agent-app.sh` 可用
 > `POCKETAGENT_SWIFTPM_FLAGS=--disable-sandbox` 透传。
+
+重新生成介绍视频（改了功能或文案之后）：`promo/make.sh`，环境准备见 `promo/README.md`。
 
 > **改键位前先跑最后那条命令。** Codex 的命令注册表里写的键位**不一定是运行时生效的** ——
 > `inspectChanges` 就因此错过一次：注册表的 `⌃⇧G` 毫无反应，菜单里实际绑的是 `⌥⌘B`。

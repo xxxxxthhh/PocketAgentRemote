@@ -1,0 +1,106 @@
+{
+  "engine": "kokoro",
+  "voice": "af_heart",
+  "speed": 1.08,
+  "sayVoice": "Samantha (English (US))",
+  "rate": 180,
+  "bpm": 124,
+  "lineGap": 0.3,
+  "sceneTail": 0.45,
+  "scenes": [
+    {
+      "id": "hook",
+      "lead": 0.0,
+      "lines": [
+        "Six buttons.",
+        "Two AI agents.",
+        "One couch."
+      ],
+      "onBeat": true
+    },
+    {
+      "id": "hardware",
+      "lead": 0.3,
+      "lines": [
+        "This is the Gamebrick, a mini retro controller.",
+        "Forty-nine millimeters, ten hours of battery, and it fits in your pocket.",
+        "Switch it to C mode, pair it over Bluetooth,",
+        "and PocketAgentRemote turns it into a remote for Codex and Claude on your Mac."
+      ]
+    },
+    {
+      "id": "couch",
+      "lead": 0.3,
+      "lines": [
+        "Your agent is working. You're not at your desk.",
+        "When it asks for approval, you don't need a keyboard.",
+        "Just press A."
+      ]
+    },
+    {
+      "id": "basics",
+      "lead": 0.3,
+      "lines": [
+        "A is Enter, to submit or approve.",
+        "Hold A and talk, for voice input.",
+        "B is Escape, to cancel or reject.",
+        "The D-pad moves through options, and repeats while you hold it.",
+        "And B plus A is backspace, for fixing a misheard word."
+      ]
+    },
+    {
+      "id": "profiles",
+      "lead": 0.3,
+      "lines": [
+        "It knows which app is in front.",
+        "In Codex, B plus up jumps to a recent chat, and B plus right finds the chat that needs you.",
+        "In Claude, the same buttons move between chats and open the command palette.",
+        "Anywhere else, it's just arrows, Enter, and Escape."
+      ]
+    },
+    {
+      "id": "menu",
+      "lead": 0.3,
+      "lines": [
+        "B plus left opens the command menu.",
+        "New chat, changes, terminal, model, archive.",
+        "It never steals focus, and while it's open, the controller belongs to the menu.",
+        "For Codex, there's also an experimental four-way dial."
+      ]
+    },
+    {
+      "id": "switcher",
+      "lead": 0.3,
+      "lines": [
+        "Hold B for the app switcher.",
+        "Left and right to pick, A to jump. Command-Tab, from across the room."
+      ]
+    },
+    {
+      "id": "appmenu",
+      "lead": 0.3,
+      "lines": [
+        "In any other app, B plus left reads that app's own menu bar.",
+        "In WeChat, next unread chat and search are pinned to the top.",
+        "Anything destructive, like quit, delete, or clear, is never listed."
+      ]
+    },
+    {
+      "id": "reliable",
+      "lead": 0.3,
+      "lines": [
+        "When a press does nothing, a short notice tells you why.",
+        "It launches at login, survives sleep, and warns you if permissions are lost.",
+        "And with no controller in hand, the same menus live in the menu bar."
+      ]
+    },
+    {
+      "id": "outro",
+      "lead": 0.4,
+      "lines": [
+        "PocketAgentRemote.",
+        "Your agents, one pocket away."
+      ]
+    }
+  ]
+}

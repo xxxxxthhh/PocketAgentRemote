@@ -1,0 +1,11 @@
+{
+  "name": "pocketagentremote-promo",
+  "private": true,
+  "description": "Frame-by-frame renderer for the PocketAgentRemote intro video",
+  "scripts": {
+    "build": "./make.sh"
+  },
+  "devDependencies": {
+    "playwright": "1.61.1"
+  }
+}
