@@ -4,15 +4,7 @@
 
 https://github.com/user-attachments/assets/02247d58-2c79-4a6b-af12-fdf2f89e1cb7
 
-<p align="center">
-  <b>Your agents, one pocket away.</b><br>
-  107 秒介绍视频，英文解说 + 字幕，覆盖全部功能 · 文件：<a href="docs/media/intro-720p.mp4"><code>docs/media/intro-720p.mp4</code></a> · 竖屏版与源码见 <a href="promo/README.md"><code>promo/</code></a>
-</p>
-
-> 当前生效的规格：`docs/spec-v0.3.md`
-> Phase 0 硬件实测：`docs/phase0-summary.md` · Phase 1 真机验证：`docs/phase1-verification.md`
-> **需要你亲自测的项：`docs/test-manual.md`**（2026-09-18 批次）· 更早的：`docs/pending-user-tests.md`
-> 路线图与执行计划：`docs/ux-roadmap.md`
+<p align="center"><b>Your agents, one pocket away.</b></p>
 
 ---
 
