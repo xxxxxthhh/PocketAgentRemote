@@ -2,10 +2,11 @@
 
 把手柄（IINE 良值 L1162）变成 macOS 上 **Codex 桌面 App / Claude 桌面 App** 的遥控器。
 
+https://github.com/user-attachments/assets/02247d58-2c79-4a6b-af12-fdf2f89e1cb7
+
 <p align="center">
-  <a href="docs/media/intro-720p.mp4"><img src="docs/media/poster.jpg" width="720" alt="PocketAgentRemote 介绍视频封面"></a><br>
   <b>Your agents, one pocket away.</b><br>
-  ▶ <a href="docs/media/intro-720p.mp4">107 秒介绍视频</a>（英文解说 + 字幕，覆盖全部功能；竖屏版与源码见 <a href="promo/README.md"><code>promo/</code></a>）
+  107 秒介绍视频，英文解说 + 字幕，覆盖全部功能 · 文件：<a href="docs/media/intro-720p.mp4"><code>docs/media/intro-720p.mp4</code></a> · 竖屏版与源码见 <a href="promo/README.md"><code>promo/</code></a>
 </p>
 
 > 当前生效的规格：`docs/spec-v0.3.md`
@@ -419,7 +420,7 @@ docs/hardware-probe.md         Phase 0 原始记录
 docs/phase1-verification.md    Phase 1 真机验证记录
 docs/research-*.md             Codex / Claude / Codex Micro 调研
 docs/research-claude-commands-verified.md  Claude 命令键位的实测记录（含证据强度分级）
-docs/media/                    README 用的介绍视频（720p）、封面与动图
+docs/media/                    README 用的介绍视频（720p）与命令菜单动图
 
 promo/                         介绍视频的源码：动画页 + 配音 + 配乐 + 渲染脚本（见 promo/README.md）
 
