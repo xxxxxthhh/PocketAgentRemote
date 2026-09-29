@@ -1,6 +1,8 @@
 # PocketAgentRemote
 
-把手柄（IINE 良值 L1162）变成 macOS 上 **Codex 桌面 App / Claude 桌面 App** 的遥控器。
+**English** · [中文](README.zh-CN.md)
+
+Turn a six-button retro controller (IINE Gamebrick L1162) into a remote for the **Codex and Claude desktop apps** on macOS.
 
 https://github.com/user-attachments/assets/02247d58-2c79-4a6b-af12-fdf2f89e1cb7
 
@@ -8,60 +10,60 @@ https://github.com/user-attachments/assets/02247d58-2c79-4a6b-af12-fdf2f89e1cb7
 
 ---
 
-## 功能一览
+## What it does
 
-手柄只有六个键：↑↓←→、A、B。B 是修饰键。下面是现在能做的事，按使用频率排：
+The controller has six inputs: ↑↓←→, A and B. B doubles as a modifier. Everything it can do today, most-used first:
 
-| 你做什么 | 发生什么 |
+| You do | What happens |
 |---|---|
-| 方向键 | 在 Codex / Claude / 任何 App 里移动光标或选项；按住不放会连续移动 |
-| A 轻按 | 提交 / 批准（松开时发 Enter） |
-| A 按住说话 | 豆包语音输入，松开结束；这次按压不会提交 |
-| B 轻按 | 取消 / 拒绝（Escape） |
-| B 按住半秒 | 弹出**程序切换器**，←→ 选、A 切过去；在任何 App 下都能用 |
-| B + ← | 弹出**命令菜单**：New Chat、Changes、Terminal、Switch Model、Archive Chat（按前台 App 变） |
-| B + ↑ / ↓ | 跳到最近会话 1 / 2（Codex）或上一个 / 下一个会话（Claude） |
-| B + → | 跳到需要你处理的会话（Codex）/ 命令面板（Claude） |
-| B + A | **退格**：删掉光标前一个字；按住不放连续删（改语音识别错的字用） |
-| 什么都不按 | profile 跟着前台 App 自动切；切到浏览器就只剩方向键和 Enter / Esc |
-| 按了没反应 | 屏幕顶部弹 3 秒英文提示告诉你为什么（被拦、不支持、切换失败） |
-| 手柄不在手边 | 菜单栏 → `Show Controller Menu` / `Show App Switcher` 是同一套菜单 |
-| 在微信 / 浏览器 / 访达里按 B + ← | 弹出**那个 App 自己菜单栏**里的操作，A 直接执行；微信默认把「下一个未读会话」「搜索」放最前。危险项（退出、关闭、删除…）永远不列出 |
-| 合盖、重启、权限被收走 | 醒来接着用，不会卡键；开机自动启动（菜单栏里可关）；辅助功能权限掉了屏幕会提示、菜单栏图标变警告 |
+| D-pad | Moves the cursor or selection in Codex, Claude or any app; hold to repeat |
+| Tap A | Submit / approve (Enter, sent on release) |
+| Hold A and talk | Voice input via Doubao; releasing ends it, and this press never submits |
+| Tap B | Cancel / reject (Escape) |
+| Hold B for half a second | Opens the **app switcher**: ←→ to pick, A to switch. Works in any app |
+| B + ← | Opens the **command menu**: New Chat, Changes, Terminal, Switch Model, Archive Chat (depends on the frontmost app) |
+| B + ↑ / ↓ | Jump to recent chat 1 / 2 (Codex) or previous / next chat (Claude) |
+| B + → | Jump to the chat that needs you (Codex) / open the command palette (Claude) |
+| B + A | **Backspace**: deletes the character before the cursor; hold to keep deleting (for fixing misheard words) |
+| Nothing at all | The profile follows the frontmost app; in a browser you only get the D-pad, Enter and Esc |
+| A press does nothing | A 3-second notice at the top of the screen says why (blocked, unsupported, switch failed) |
+| Controller not in hand | Menu bar → `Show Controller Menu` / `Show App Switcher` open the same menus |
+| B + ← in WeChat, a browser or Finder | Lists that **app's own menu-bar commands**; A runs one. WeChat pins "next unread chat" and "search" to the top. Destructive items (quit, close, delete…) are never listed |
+| Lid closed, reboot, permission revoked | Picks up again after wake with no stuck keys; launches at login (can be turned off in the menu bar); a lost Accessibility permission raises an on-screen notice and a warning menu-bar icon |
 
-实验中、默认关闭：Codex 命令菜单可切成**四向操作盘**（方向直选，见「手柄菜单」）。
+Experimental and off by default: the Codex command menu can be switched to a **four-way dial** (pick by direction, see "Controller menu").
 
 ---
 
-## 快速开始
+## Quick start
 
 ```bash
-./scripts/make-agent-app.sh release     # 构建 build/PocketAgentRemote.app
-open /Applications/PocketAgentRemote.app   # 启动（脚本已把包复制到 /Applications；菜单栏出现手柄图标）
+./scripts/make-agent-app.sh release       # builds build/PocketAgentRemote.app
+open /Applications/PocketAgentRemote.app  # launch (the script copies the bundle to /Applications; a controller icon appears in the menu bar)
 ```
 
-然后：
+Then:
 
-1. **点菜单栏的手柄图标 → `Request Accessibility Permission`**，在系统设置里勾选 PocketAgentRemote。
-   （没有这个权限，按键会被系统丢弃 —— 菜单里会一直显示 `Accessibility: Required`。）
-2. **菜单 → `Input Monitoring`**：如果你的手柄是**泛用变体**（蓝牙里显示为 `Wireless Controller`），
-   还需要授予 **Input Monitoring**。XInput 变体（`Xbox Wireless Controller`）不需要。
-   菜单里会显示当前状态；`denied` 时点它跳到系统设置。
-3. 手柄切到 **C 档**并连上，直接用 —— **profile 会自动跟着前台 App 走**，不用手动选。
+1. **Menu-bar controller icon → `Request Accessibility Permission`**, and enable PocketAgentRemote in System Settings.
+   (Without it, macOS drops every key the app sends; the menu keeps showing `Accessibility: Required`.)
+2. **Menu → `Input Monitoring`**: if your controller is the **generic variant** (shows up in Bluetooth as `Wireless Controller`),
+   it also needs **Input Monitoring**. The XInput variant (`Xbox Wireless Controller`) does not.
+   The menu shows the current state; when it says `denied`, click it to open System Settings.
+3. Put the controller in **C mode**, connect it, and use it. **The profile follows the frontmost app**; there is nothing to choose.
 
-> 签名换成 Apple Development 证书后，**重新构建不再使授权失效**（早先 ad-hoc 签名每次重建都要重授权）。
+> Signed with an Apple Development certificate, **rebuilding no longer invalidates the permissions** (the earlier ad-hoc signature needed re-granting after every build).
 
-菜单栏图标：实心 = 手柄已连接。菜单里能实时看到当前 profile、前台 App、以及每类动作的结果。
+Menu-bar icon: filled = controller connected. The menu shows the current profile, the frontmost app and the result of each kind of action, live.
 
-### 自动切换 profile
+### Automatic profiles
 
 ```text
-前台是 ChatGPT(Codex)  → Codex 键位      （B+↑ = 跳到会话 1）
-前台是 Claude.app      → Claude 键位     （B+↑ = 下一个会话）
-前台是其他任何 App     → Generic         （只有方向键 / A=回车 / B=Esc）
+Frontmost is ChatGPT (Codex)  → Codex bindings    (B+↑ = jump to chat 1)
+Frontmost is Claude.app       → Claude bindings   (B+↑ = next chat)
+Any other frontmost app       → Generic           (D-pad / A = Enter / B = Esc only)
 ```
 
-配置里改：
+In the config:
 
 ```json
 "profileMode": "auto",
@@ -72,18 +74,18 @@ open /Applications/PocketAgentRemote.app   # 启动（脚本已把包复制到 /
 "fallbackProfile": "genericTerminal"
 ```
 
-**自动模式下不再检查前台 App 白名单** —— 因为 profile 本身就是从「前台 App」推出来的，
-未知 App 只能落到 Generic，工具专属动作不可能误发。白名单在手动模式下仍然生效。
+**Auto mode does not check the frontmost-app allowlist**: the profile is itself derived from the frontmost app, so an unknown
+app can only land on Generic and a tool-specific action cannot reach the wrong app. The allowlist still applies in manual mode.
 
-也可以切回 `"profileMode": "manual"`：那时在菜单里手动指定 profile，白名单负责拦住发错对象。
+You can switch back to `"profileMode": "manual"`: you then pick the profile from the menu, and the allowlist stops actions from reaching the wrong app.
 
-> **为什么可以自动推断**：早期规格要求 profile 必须手动选择，因为当时要「猜终端里跑的是哪个 agent」，
-> 这在 macOS 上不可靠。现在读的是前台 App 的 bundle ID，这是精确信号，守卫本来也在用它，
-> 所以自动模式是安全的默认值。
+> **Why inferring the profile is safe**: the early spec required choosing the profile by hand, because back then it meant
+> guessing which agent was running inside a terminal, which is unreliable on macOS. Now it reads the frontmost app's bundle ID,
+> an exact signal the guard already relied on, so auto mode is a safe default.
 
-### 排查问题
+### Troubleshooting
 
-**菜单 → `Open Input Monitor…`** 显示实时链路，或者直接看日志文件：
+**Menu → `Open Input Monitor…`** shows the live pipeline, or read the log file directly:
 
 ```bash
 tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
@@ -95,73 +97,72 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 [   9.001] OUTPUT   SEND  down  navigateUp → upArrow → com.openai.codex
 ```
 
-`SKIP` = 当前 profile 不支持该动作；`DENY` = 被守卫拦下（前台 App 不在白名单等），原因都写在行尾。
-`TOAST` = 屏幕上弹了什么提示。
+`SKIP` = the current profile does not support the action; `DENY` = the guard blocked it (frontmost app not allowlisted, etc.).
+The reason is at the end of the line. `TOAST` = the on-screen notice that was shown.
 
 ---
 
-## 手柄映射（默认，零配置）
+## Controller mapping (defaults, zero config)
 
-手柄只有 6 个输入，`B` 是修饰键。
+Six inputs; `B` is the modifier.
 
-| 手势 | 语义动作 | Codex 实际发出 |
+| Gesture | Action | What Codex receives |
 |---|---|---|
-| ↑ ↓ ← → | 导航 | 方向键（按住 0.35 s 后每 80 ms 重复一次） |
-| **A 轻按** | 提交 / **批准**（松开时发，最多晚 220 ms） | `Enter` |
-| **A 长按** | **按住说话**（豆包语音输入，单键） | 按住右 `⌥`，松开结束 |
-| **B 轻按** | 取消 / **拒绝** | `Escape` |
-| **B 长按** | **打开程序切换器**（手柄版 ⌘⇥，见下节） | 不发按键，弹出横向图标条 |
-| **B + ↑** | 跳到最近会话 1 | `⌥⌘1` |
-| **B + ←** | **打开手柄菜单**（见下节） | 不发按键，弹出浮层 |
-| **B + ↓** | 跳到最近会话 2 | `⌥⌘2` |
-| **B + →** | 跳到**需要我处理**的会话 | `⌥⌘A` |
-| **B + A** | **退格**（改语音识别错的字） | `⌫`，按住连续删 |
+| ↑ ↓ ← → | Navigate | Arrow keys (after 0.35 s held, repeats every 80 ms) |
+| **Tap A** | Submit / **approve** (sent on release, at most 220 ms late) | `Enter` |
+| **Hold A** | **Push to talk** (Doubao voice input, one button) | Holds right `⌥` until release |
+| **Tap B** | Cancel / **reject** | `Escape` |
+| **Hold B** | **Open the app switcher** (a controller ⌘⇥, see below) | No key; shows an icon strip |
+| **B + ↑** | Jump to recent chat 1 | `⌥⌘1` |
+| **B + ←** | **Open the controller menu** (see below) | No key; shows an overlay |
+| **B + ↓** | Jump to recent chat 2 | `⌥⌘2` |
+| **B + →** | Jump to the chat that **needs me** | `⌥⌘A` |
+| **B + A** | **Backspace** (fix misheard words) | `⌫`, repeats while held |
 
-> **`B 长按` 不经过 adapter，也不受白名单限制。** 切换前台 App 不是「给某个 App 发按键」，
-> 而是系统效果，所以它**在任何前台 App 下都生效** —— 包括你在浏览器里的时候，这正是它最有用
-> 的场景。实测（macOS 27）在进程内能用的几种办法（`NSRunningApplication.activate`、AX
-> `kAXFrontmost`、合成 `⌘⇥`）**全部无效**，唯一稳定生效的是 AppleScript `activate`，
-> 因此 `Info.plist` 里必须有 `NSAppleEventsUsageDescription`（构建脚本已带上）。
+> **Hold B bypasses the adapters and the allowlist.** Switching the frontmost app is not "sending keys to an app" but a system
+> effect, so it **works whatever app is in front**, including a browser, which is exactly where it is most useful. Tested on
+> macOS 27, every in-process method (`NSRunningApplication.activate`, AX `kAXFrontmost`, a synthesized `⌘⇥`) **failed**; the only
+> reliable one is AppleScript `activate`, so `Info.plist` must carry `NSAppleEventsUsageDescription` (the build script adds it).
 >
-> 2026-09-18 之前 `B 长按` 是「Codex ⇄ Claude 二选一切换」。那条逻辑（`agentPair`）还在，
-> 入口只剩菜单栏的 `Focus Other Agent Now`；手柄上它被程序切换器取代，见下文。
+> Before 2026-09-18, holding B toggled between Codex and Claude. That logic (`agentPair`) still exists, now only behind the
+> menu-bar item `Focus Other Agent Now`; on the controller the app switcher replaced it (see below).
 
-> **语音输入现在只需一个键：按住 A 说话。** 这是内置默认（`a.hold` 手势），不必改配置。
-> A 轻按仍然是提交，但 `Enter` 在**松开 A 的那一刻**才发（因为要等到松开才知道这次是短按还是长按）；
-> 长按跨过阈值后从不发 `Enter`，改成按住说话。阈值 `aHoldMs`（默认 220 ms）。
+> **Voice input takes one button: hold A and talk.** It is the built-in default (the `a.hold` gesture), no config needed.
+> A tap still submits, but `Enter` is sent **when A is released** (only then is it known whether the press was a tap or a hold);
+> once a press crosses the threshold it never sends `Enter` and becomes push-to-talk instead. The threshold is `aHoldMs` (default 220 ms).
 >
-> **`B + A` 从 2026-09-21 起是退格**，用来删语音识别错的字：按住 B 按一下 A 删一个字，
-> 按住 A 不放连续删，**此时松开 B 也没关系**，松开 A 才停。在浏览器等任何 App 里都能用。
-> 旧配置里的 `b.a` 语音绑定（按住右 ⌥）会在启动时自动移除并留备份，只在它仍等于旧默认值时才动。
-> 只删单个字，不删整词。
+> **Since 2026-09-21, `B + A` is backspace**, for deleting misrecognised characters: hold B and tap A to delete one, hold A
+> to keep deleting. **Letting go of B meanwhile is fine**; it stops when A is released. Works in any app, browsers included.
+> An old `b.a` voice binding (hold right ⌥) in an existing config is removed at launch with a backup, and only if it still
+> equals the old default. It deletes one character at a time, not whole words.
 >
-> 豆包用的是「长按**右**option」形态，不是「单击左option+左shift」—— 后者实测在合成事件下**不生效**。
+> Doubao (ByteDance's input method) needs the "hold **right** Option" form, not "tap left Option + left Shift"; the latter
+> **does not work** with synthesized events.
 
-> `A` / `B` 同时承担「批准 / 拒绝」，因为 Codex 和 Claude 的审批弹层用的就是 `Enter` / `Escape` ——
-> 最终确认权始终留在 agent 自己的 UI 里。**注意：拒绝请用 B 轻按**；按住 B 超过
-> `holdMs`（默认 **450 ms**）才会打开程序切换器。`tapMaxMs`（220 ms）**不再**决定
-> 轻按/长按之分：按住 300 ms 仍是「取消」，不会弹切换器。
+> `A` / `B` double as approve / reject because the approval prompts in Codex and Claude use exactly `Enter` / `Escape`;
+> the final say always stays in the agent's own UI. **To reject, tap B**: only holding B past `holdMs` (default **450 ms**)
+> opens the app switcher. `tapMaxMs` (220 ms) **no longer** decides tap versus hold: a 300 ms press is still "cancel" and
+> does not open the switcher.
 >
-> 另外两条边界：**B 一旦与方向键/A 组成 chord，这次 B 的按下就完全归 chord 所有** ——
-> 松开 B 不会再补发 `Escape`（语音输入结束不会多取消一次）；**A 已按住时再按 B 会被忽略**
-> （A 不是层键，避免松开 A 之后那一下 B 变成切窗口）。
+> Two more edge cases: **once B forms a chord with the D-pad or A, that B press belongs entirely to the chord**, so
+> releasing B does not send a stray `Escape` (ending voice input never cancels as well); **pressing B while A is already held
+> is ignored** (A is not a layer key, so the B after releasing A cannot turn into a window switch).
 
-按住 `B` 不放可以连续触发多个 chord（类似按住 Shift 连按不同字母）。
+Keep B held to fire several chords in a row (like holding Shift and typing different letters).
 
-**B 层为什么是「会话跳转」**：手柄只有 12 个手势，而
-`⌥⌘1…6`（Go to recent chat）正是 Codex Micro 六个 agent 键的对等物 ——
-每个键跳到某个 agent 的会话。`⌥⌘A` 更进一步：一键跳到**正在等你处理**的那个会话
-（等审批 / 有未读）。这是我们能用六键手柄做到的、最接近 Micro 体验的形态。
+**Why the B layer is "jump to chat"**: the controller has only 12 gestures, and `⌥⌘1…6` (Go to recent chat) is the direct
+counterpart of Codex Micro's six agent keys, each jumping to one agent's chat. `⌥⌘A` goes further: one press to the chat that
+is **waiting for you** (an approval or unread output). That is as close to the Micro experience as a six-button controller gets.
 
-想换回「新建会话 / 终端 / 模型选择器」等，改配置即可，见下节。
+To bind these back to "new chat / terminal / model picker" and so on, change the config; see below.
 
 ---
 
-## 手柄菜单（`B+←`）
+## Controller menu (`B+←`)
 
-高频动作凭手感直达，低频动作看着菜单选 —— 手柄只有 12 个手势，菜单是继续扩展的唯一方向。
+Frequent actions by feel, infrequent ones from a menu: with only 12 gestures, a menu is the one way left to grow.
 
-<p align="center"><img src="docs/media/command-menu.gif" width="640" alt="B+← 打开命令菜单，↓ 逐项选择，再切到四向操作盘"></p>
+<p align="center"><img src="docs/media/command-menu.gif" width="640" alt="B+← opens the command menu, ↓ walks the rows, then the four-way dial"></p>
 
 ```text
 ┌───────────────────────────┐
@@ -175,93 +176,95 @@ tail -f ~/Library/Application\ Support/PocketAgentRemote/debug.log
 └───────────────────────────┘
 ```
 
-- **打开后可以松开 B**，菜单留在屏幕上，不用一直捏着组合键。
-- **↑↓ 移动选择，A 执行，B 关闭**。菜单打开期间手柄整个归菜单，**↑↓/A/B 不会传给背后的聊天窗口**。
-- **内容跟随当前 App**：在 Codex 显示 Codex 的操作，在 Claude 显示 Claude 的，且**只列真的能执行的项**
-  （缺默认键位的动作会被自动滤掉，而不是留一行按了没反应的）。
-- **浮层永不抢焦点**（non-activating panel，实测 app 仍非 active、聊天窗口仍是前台），
-  所以你的语音输入、agent 自己的快捷键都不受影响。
-- **切到别的 App 菜单自动关闭**；即使来不及关，**执行时也会校验前台 App 没变**，否则拒绝执行并记日志。
-- **常用直达继续保留**：`B+A` 语音、`B+→` 待处理会话、B 长按切程序、`B+↑/↓` 会话跳转，都不必绕菜单。
-- 不想用手柄时：**菜单栏 → `Show Controller Menu`** 是同一入口。
+- **You can let go of B once it is open**; the menu stays on screen, no need to keep holding the chord.
+- **↑↓ to move, A to run, B to close.** While the menu is open it owns the controller: **↑↓/A/B never reach the chat window behind it**.
+- **The contents follow the app**: Codex actions in Codex, Claude actions in Claude, and **only rows that can actually run**
+  (an action without a default key is left out rather than shown as a row that does nothing).
+- **The overlay never takes focus** (a non-activating panel; tested: the app stays inactive and the chat window stays frontmost),
+  so voice input and the agent's own shortcuts are unaffected.
+- **Switching to another app closes the menu**; if it could not close in time, **running a row re-checks that the frontmost app
+  is unchanged** and refuses (with a log line) if it is not.
+- **Direct shortcuts stay**: hold A for voice, `B+A` for backspace, `B+→` for the chat that needs you, hold B to switch apps,
+  `B+↑/↓` to jump between chats. None of them go through the menu.
+- Without the controller: **menu bar → `Show Controller Menu`** is the same menu.
 
-> **`B+←` 之前是「新建会话」**（后来在 Claude 侧被改绑 `⌘N`）。它现在统一为「打开菜单」，
-> 新建会话是菜单第一项。若你的配置里还留着旧的 `b.left` 覆盖，App 启动时**会自动移除它并留一份备份**
-> （`config.json.backup-<时间戳>`），只在它仍然等于旧默认值 `⌘N` 时才动 —— 你自己改过的绑定不会被碰。
+> **`B+←` used to be "new chat"** (later rebound to `⌘N` on the Claude side). It is now "open the menu" everywhere, with new chat
+> as the first row. If your config still has the old `b.left` override, the app **removes it at launch and keeps a backup**
+> (`config.json.backup-<timestamp>`), and only when it still equals the old default `⌘N`; bindings you changed yourself are left alone.
 
-**菜单内容按 App 分别声明，只列在该 App 上验证过能用的命令：**
+**Each app declares its own rows, and lists only commands verified to work in that app:**
 
-| App | 菜单 |
+| App | Menu |
 |---|---|
 | Codex | New Chat / Changes / Terminal / Switch Model / Archive Chat |
-| Claude | New Chat（`⌘N`）/ Show Changes（`⌘⇧D`）/ Show Terminal（`⌘J`）—— 三项都经运行中菜单 + App 内快捷键表双重印证 |
+| Claude | New Chat (`⌘N`) / Show Changes (`⌘⇧D`) / Show Terminal (`⌘J`), each confirmed twice: in the running app's menu and in its shortcut table |
 
 ---
 
-## 程序切换器（`B 长按`）
+## App switcher (hold `B`)
 
-手柄版 ⌘⇥：**按住 B 约半秒再松开**，屏幕下方弹出一排图标，是所有运行中的普通程序
-（Dock 里那种；菜单栏小工具不列），按最近使用顺序从左到右排。
+A controller ⌘⇥: **hold B for about half a second and release**, and a row of icons appears at the bottom of the screen with every
+running regular app (the ones in the Dock; menu-bar utilities are not listed), most recently used on the left.
 
 ```text
 ┌──────────────────────────────────────────┐
-│  切换程序                                │
+│  Switch App                              │
 │                                          │
 │   [Codex]  [▮Claude▮]  [Chrome]  [Finder]│
 │                Claude                    │
 │                                          │
-│  ←→ 选择   A 切换   B 关闭               │
+│  ←→ Select   A Switch   B Close          │
 └──────────────────────────────────────────┘
 ```
 
-- **松开 B 后浮层保持**，←→ 移动高亮，A 切到高亮的程序，B 关闭。打开期间 ↑↓ 被吞掉，
-  什么都不会传给背后的窗口。
-- **默认高亮第二个 = 上一个程序**，所以「长按 B 松开、按 A」就是切回上一个程序，
-  和 ⌘⇥ 轻点一下相同。原来的 Codex ⇄ Claude 来回切成了它的特例。
-- **在任何 App 下都能打开**（浏览器、终端都行），这是它和 `B+←` 命令菜单的区别 ——
-  命令菜单只在 agent 前台时才有内容。
-- 切换用的是同一条 AppleScript `activate` 路径（按 bundle ID 寻址），日志里是 `FOCUS` 行。
-- 只有一个普通程序在跑时不弹出，日志记 `SKIP openAppSwitcher`。
-- 顺序只对 App 启动后用过的程序准确：macOS 不提供全局的最近使用顺序，App 自己监听
-  激活通知来维护；启动前就开着、之后没碰过的程序排在后面。
-- 不想用手柄时：**菜单栏 → `Show App Switcher`** 是同一入口。
+- **The strip stays after B is released**: ←→ moves the highlight, A switches to it, B closes. ↑↓ are swallowed while it is open,
+  so nothing reaches the window behind.
+- **The highlight starts on the second app, the one you used before**, so "hold B, release, press A" switches back to the previous
+  app, just like a quick ⌘⇥. The old Codex ⇄ Claude toggle is a special case of this.
+- **It opens in any app** (browsers and terminals included), unlike the `B+←` command menu, which only has content when an agent is in front.
+- Switching uses the same AppleScript `activate` path (addressed by bundle ID); it shows up as `FOCUS` lines in the log.
+- With only one regular app running it does not open, and the log records `SKIP openAppSwitcher`.
+- The order is only accurate for apps used since PocketAgentRemote launched: macOS offers no global most-recently-used order, so the
+  app tracks activation notifications itself. Apps that were open before and not touched since go to the end.
+- Without the controller: **menu bar → `Show App Switcher`** is the same switcher.
 
-**实验：四向操作盘（Dial）。** 菜单栏 → `Command Menu: List / Dial (experimental)` 勾 Dial，
-Codex 前台按 `B+←` 出来的不再是竖列表，而是上「New Chat」、左「Changes」、下「Terminal」、右「More」四个方向槽：
-按一个方向选中，再按 A 执行；「More」里是 Switch Model / Archive Chat，B 回到操作盘。刚打开时**什么都不选中**，
-所以打开菜单的那下 ← 不会误选。默认仍是列表，这个选择重启后失效；要不要改成默认，等对照测试有数据再定。
+**Experimental: the four-way dial.** Menu bar → `Command Menu: List / Dial (experimental)` → Dial. With Codex in front, `B+←` then
+shows four direction slots instead of a list: "New Chat" up, "Changes" left, "Terminal" down, "More" right. Press a direction to
+select, then A to run; "More" holds Switch Model / Archive Chat, and B returns to the dial. **Nothing is selected when it opens**,
+so the ← that opened the menu cannot pick anything by accident. The list stays the default and the choice resets on restart;
+whether the dial becomes the default waits on comparison testing.
 
-> Claude 侧只列这三项，是有原因的：其余命令键位未经双重印证。宁可少一行，也不要出现
-> 「选了做错事」的一行 —— `⌘⇧I` 就曾以「切换模型」的名义在 Claude 里开出匿名会话。
-> 注意 Show Changes / Show Terminal 属于 Code 会话，**在普通 chat 语境下会被 Claude 自己灰显**
-> （菜单导出里是 `[OFF]`），这时按了没反应是 Claude 的行为，证据见 `docs/research-claude-commands-verified.md`。
-> Claude 里想切模型/用其他命令，`B+→` 的**命令面板**（`⌘K`）仍然直达。
+> Claude lists only these three rows on purpose: the other commands' keys have not been confirmed twice, and a missing row is better
+> than a row that does the wrong thing. `⌘⇧I` once opened an incognito chat in Claude while labelled "switch model".
+> Note that Show Changes / Show Terminal belong to Code sessions and **Claude itself greys them out in a plain chat** (`[OFF]` in the
+> menu dump); a press doing nothing there is Claude's behaviour. Evidence: `docs/research-claude-commands-verified.md`.
+> To switch models or run other commands in Claude, the **command palette** (`⌘K`) is still one `B+→` away.
 
 ---
 
-## 屏幕提示
+## On-screen notices
 
-按了没反应，以前只能翻日志；现在屏幕顶部会弹一条 3 秒的英文提示，例如：
+A press that did nothing used to mean digging through the log; now a 3-second notice appears at the top of the screen, for example:
 
 ```text
-Generic mode doesn't support Recent Chat 1              ← 在浏览器里按了 B+↑
-Can't open menu: frontmost app isn't an agent           ← 在浏览器里按了 B+←
-Blocked: frontmost app isn't an agent (not allowlisted) ← 手动模式下发给了白名单外的 App
-Switch failed: WeChat (…reason…)                        ← 程序切换器切不过去
+Generic mode doesn't support Recent Chat 1              ← B+↑ pressed in a browser
+Can't open menu: frontmost app isn't an agent           ← B+← pressed in a browser
+Blocked: frontmost app isn't an agent (not allowlisted) ← manual mode, sent to an app outside the allowlist
+Switch failed: WeChat (…reason…)                        ← the app switcher could not bring it forward
 ```
 
-- 只报**没发生**的事；成功的动作不弹，你看目标 App 就知道。
-- 提示不接管任何按键：显示期间按 B 还是 Escape，按方向还是方向。
-- 3 秒后自己消失；新提示替换旧提示。不能手动关，也没有配置项。
-- 「Switch failed」只在目标程序 4 秒内都没到前台时才弹；切换请求在后台发，等待期间手柄照常可用。
-  微信这类回应慢的程序（约 2 秒）现在会正常切过去，不再误报。
-- 菜单打开时提示出现在屏幕顶部，不和菜单重叠，到期也不会关掉菜单。
+- Only things that **did not happen** are reported; successful actions show nothing, since the target app itself shows the result.
+- The notice never takes over any key: while it is visible, B is still Escape and the D-pad still moves.
+- It disappears after 3 seconds; a new notice replaces the old one. It cannot be dismissed early and has no settings.
+- "Switch failed" only appears when the target app has not come forward within 4 seconds; the switch request runs in the background,
+  so the controller stays usable while waiting. Slow responders like WeChat (about 2 seconds) now switch normally instead of being reported as failures.
+- With a menu open, the notice appears at the top of the screen, never overlaps the menu, and does not close it when it expires.
 
 ---
 
-## 配置
+## Configuration
 
-`~/Library/Application Support/PocketAgentRemote/config.json`（菜单 → `Open Config File`，改完 `Reload Config`）。
+`~/Library/Application Support/PocketAgentRemote/config.json` (menu → `Open Config File`, then `Reload Config` after editing).
 
 ```json
 {
@@ -277,7 +280,7 @@ Switch failed: WeChat (…reason…)                        ← 程序切换器�
     "toggleFastMode": { "key": "f", "modifiers": ["control", "option"] }
   },
   "gestureKeyOverrides": {
-    "b.a": { "modifiers": ["rightOption"], "hold": true }
+    "b.a": { "modifiers": ["option"], "hold": true }
   },
   "profileGestureKeyOverrides": {
     "claudeCode": {
@@ -288,162 +291,164 @@ Switch failed: WeChat (…reason…)                        ← 程序切换器�
 }
 ```
 
-**`agentPair` 决定菜单栏 `Focus Other Agent Now` 在两个 App 之间怎么切**（`B 长按` 已改为
-程序切换器，不再读它）：`left`/`right` 不是左右手方向，
-而是「两个槽位」——从任一方按下都切到另一方，从别的 App 按下则切到 `left`。
-留空一侧（`""`）就是单 agent 模式；写 `null` 则回落到内置默认值。
-`leftName`/`rightName` 只是显示用的名字，可省略。
+**`agentPair` decides how the menu-bar item `Focus Other Agent Now` switches between two apps** (holding B is now the app
+switcher and no longer reads it): `left`/`right` are not hands but two slots. Pressing from either one switches to the other;
+pressing from any other app switches to `left`. An empty side (`""`) means single-agent mode; `null` falls back to the built-in default.
+`leftName`/`rightName` are display names only and optional.
 
-三层覆盖，**后者优先**：内置语义绑定 → `gestureKeyOverrides`（全局）→ `profileGestureKeyOverrides`（按 profile）。
+Three layers of overrides, **later wins**: built-in bindings → `gestureKeyOverrides` (global) → `profileGestureKeyOverrides` (per profile).
 
-**`modifiers` 里的左右侧是分开的**：`option` 是左 Option（keyCode 58），`rightOption` 是右 Option（61）。
-有些目标只认其中一侧（豆包就是），**选错不报错、只是没反应**。同理 `shift`/`rightShift` 等。
+**Left and right modifiers are distinct in `modifiers`**: `option` is left Option (keyCode 58), `rightOption` is right Option (61).
+Some targets only accept one side (Doubao does), and **picking the wrong one fails silently**. The same goes for `shift`/`rightShift` and the rest.
 
-**`key` 的写法很自由**：`"a"`、`"1"`、`"]"`、`"up"`、`"esc"`、`"space"` 都可以
-（也接受 `digit1` / `rightBracket` / `upArrow` 这种枚举名）。省略 `key` 就是只按修饰键。
+**`key` is forgiving**: `"a"`, `"1"`, `"]"`, `"up"`, `"esc"`, `"space"` all work (enum names such as `digit1` / `rightBracket` /
+`upArrow` are accepted too). Leaving out `key` presses only the modifiers.
 
-### `actionKeyOverrides` —— 改「某个动作发什么键」
+### `actionKeyOverrides`: change which key an action sends
 
-key 是语义动作名，value 是按键。用来补齐 Codex **没有默认键位**的动作：
-在 Codex 的 `Settings → Keyboard Shortcuts` 里给 Fast mode 绑一个键，
-再把同一个键写进这里，手柄就能触发它了。
+Keys are semantic action names, values are key strokes. Use it for actions Codex has **no default key** for: bind Fast mode to a key
+in Codex's `Settings → Keyboard Shortcuts`, write the same key here, and the controller can trigger it.
 
-### `gestureKeyOverrides` —— 改「某个手势发什么键」
+### `gestureKeyOverrides`: change which key a gesture sends
 
-**这一层绕过语义动作词表**，可以直接把任意手势指向任意按键，
-比如让 `B + A` 发 `⇧⎋`（Clear all unreads），而我们的动作表里根本没有这个动作。
+**This layer bypasses the action vocabulary**, so any gesture can point at any key, for example making `B + A` send `⇧⎋`
+(Clear all unreads), which our action table does not have at all.
 
-手势标识符（共 12 个，就是硬件能产生的全部）：
+Gesture identifiers (12 in total, everything the hardware can produce):
 
 ```text
-基础层      up · down · left · right · a
-B 手势      b.tap（取消）· b.hold（程序切换器）
-chord       b.up · b.down · b.left · b.right · b.a
+base layer   up · down · left · right · a
+B gestures   b.tap (cancel) · b.hold (app switcher)
+chords       b.up · b.down · b.left · b.right · b.a
 ```
 
-> `b.tap` 与 `b.hold` 是两个独立的手势，可以分别指向不同东西 —— 现在默认就是分开的。
-> 把 `b.hold` 写进 `gestureKeyOverrides` 可以覆盖掉「程序切换器」，改回发某个按键。
+> `b.tap` and `b.hold` are independent gestures that can point at different things, and by default they already do.
+> Putting `b.hold` in `gestureKeyOverrides` replaces the app switcher with a key of your choice.
 
-按键名：`a`-`z`、`0`-`9`、`upArrow`/`downArrow`/`leftArrow`/`rightArrow`、
-`enter`/`escape`/`tab`/`space`、`minus`/`equal`/`comma`/`period`/`slash`/`grave` 等；
-修饰键 `command`/`option`/`control`/`shift`（`modifiers` 可省略）。
+Key names: `a`-`z`, `0`-`9`, `upArrow`/`downArrow`/`leftArrow`/`rightArrow`, `enter`/`escape`/`tab`/`space`,
+`minus`/`equal`/`comma`/`period`/`slash`/`grave` and more; modifiers `command`/`option`/`control`/`shift` (`modifiers` can be omitted).
 
-**`key` 可以省略 —— 那就是「只按修饰键」**：
+**`key` can be omitted, which means "modifiers only"**:
 
 ```json
 "gestureKeyOverrides": {
-  "b.a": { "modifiers": ["rightOption"], "hold": true }
+  "b.a": { "modifiers": ["option"], "hold": true }
 }
 ```
 
-- `hold: true` = **按住式**（chord 开始时按下，松开 A 时抬起）。实测这是豆包语音输入唯一可行的形态。
-- 不写 `hold`（默认）= **单击**（按下即抬起）。
-- 修饰键**区分左右**：`option` 是左 Option（keyCode 58），`rightOption` 是右 Option（61）。
-  有些目标（比如豆包）只认其中一侧，选错了不会报错、只是没反应。
-  同理还有 `shift`/`rightShift`、`control`/`rightControl`、`command`/`rightCommand`。
+> The example uses left ⌥. "`b.a` = hold right ⌥" was the old voice binding, and the app removes it at launch (with a backup).
 
-安全上分两类：
+- `hold: true` = **held** (pressed when the chord starts, released when A is released). This is the form Doubao voice input needs
+  (holding right ⌥), and the default A hold already does it.
+- Without `hold` (the default) = **a tap** (pressed and released at once).
+- Modifiers **distinguish sides**: `option` is left Option (keyCode 58), `rightOption` is right Option (61). Some targets (such as
+  Doubao) only accept one side; the wrong one does not error, it just does nothing. Likewise `shift`/`rightShift`,
+  `control`/`rightControl`, `command`/`rightCommand`.
 
-- **带主体键**的自定义绑定 = 工具专属动作 → 需要选定 profile + 前台 App 在白名单内
-- **只按修饰键**的绑定 = 全局手势 → 不受白名单限制（它不向任何 App 输入命令）；
-  断连或退出时会强制释放，不会卡住修饰键
+Two safety classes:
 
-> 配置里写错的手势标识符**不会导致解析失败**，而是被忽略并在日志里列出来（`unrecognised gesture ids`）。
+- A custom binding **with a main key** = a tool-specific action → needs a chosen profile and an allowlisted frontmost app
+- A binding with **modifiers only** = a global gesture → not limited by the allowlist (it types no command into any app);
+  released by force on disconnect or quit, so modifiers never stay stuck
 
----
-
-## 安全模型
-
-- 默认 `macrosEnabled = false`；默认自动模式，未知 App 一律落到 Generic（只有方向键 / 回车 / Esc）
-- 工具专属动作只会发给对应的 App：自动模式下 profile 由前台 App 决定；手动模式下前台 App 还必须在白名单内
-  （默认只有两个 AI App + 常见终端/IDE）
-- 被守卫拦下的动作**不做任何替代**，只报原因 —— 尤其是权限模式，绝不会被悄悄换成「批准」
-- 退出、断连、睡眠时释放所有修饰键与按住的键
+> Unknown gesture identifiers in the config **do not break parsing**; they are ignored and listed in the log (`unrecognised gesture ids`).
 
 ---
 
-## 项目状态
+## Safety model
 
-日常可用，345 个单元测试全部通过。各功能的验证程度不同：
+- `macrosEnabled = false` by default; auto mode by default, where any unknown app lands on Generic (D-pad / Enter / Esc only)
+- Tool-specific actions only go to their own app: in auto mode the profile comes from the frontmost app; in manual mode the frontmost
+  app must also be on the allowlist (by default only the two AI apps plus common terminals/IDEs)
+- A blocked action is **never substituted**, only reported. In particular a permission-mode action is never quietly turned into "approve"
+- Every modifier and held key is released on quit, disconnect and sleep
 
-| 功能 | 验证程度 |
+---
+
+## Project status
+
+In daily use; all 345 unit tests pass. Verification depth varies by feature:
+
+| Feature | Verified by |
 |---|---|
-| 手柄输入（C 档两个变体） | ✅ 真机实测 |
-| Codex / Claude / Generic 三套键位 | ✅ Codex、Claude 两侧真机实测；Codex 侧 8/11 个动作有默认键位 |
-| 手柄菜单（`B+←`） | ✅ 单测 + 真实窗口 + 手柄实机 |
-| 程序切换器（`B 长按`） | ✅ 单测 + 手柄实机 11 项验收 |
-| 菜单栏入口、A 键边界情况、屏幕提示、切换器连按 | ✅ 单测覆盖；尚未完整实机验收 |
-| 四向操作盘（Dial） | 🧪 实验功能，默认关闭 |
+| Controller input (both C-mode variants) | ✅ Tested on the real controller |
+| Codex / Claude / Generic bindings | ✅ Codex and Claude tested on real hardware; 8 of 11 Codex actions have default keys |
+| Controller menu (`B+←`) | ✅ Unit tests + real windows + the physical controller |
+| App switcher (hold `B`) | ✅ Unit tests + an 11-item acceptance run on the physical controller |
+| Menu-bar entry points, A-button edge cases, on-screen notices, rapid switcher presses | ✅ Unit tests; not yet fully accepted on hardware |
+| Four-way dial | 🧪 Experimental, off by default |
 
-### 已知限制
+### Known limitations
 
-- **Codex 没有权限模式循环动作**，切权限模式请用 Codex 自己的 UI。
-- **Claude 侧的动作映射未做深度验证**（调研深度不及 Codex），`queueFollowUp` 在 Claude 上不可用。
-- **`B 长按` 现在是程序切换器，不再是「拒绝」**：审批时拒绝请用 B 轻按。这是刻意的取舍。
-- **跨 App 切换依赖 AppleScript**：进程内的 `activate()` / AX / 合成 `⌘⇥` 在 macOS 27 上实测全部无效，
-  所以 `Info.plist` 里的 `NSAppleEventsUsageDescription` 是必需的。若将来系统改规则，
-  日志会打印实际生效的方法（`via appleScript`）以及全部失败原因。
-- **A 轻按的 Enter 在松开时才发**（最多晚 220 ms）：因为要等到松开才知道这次是短按还是按住说话。
-  想要「按下即发」就得放弃单键语音，这是取舍不是 bug。
-- **屏幕提示不能手动关**，只能等 3 秒；也不弹成功提示。
-- **四向操作盘只有 Codex 有**，Claude 仍是列表；且选择不保存，重启回到列表。
-- **语音输入只绑在 A 长按上**（`B+A` 是退格）。如果想把语音挂到 `B+A`，配置里给 `b.a` 写一个**不是右 ⌥** 的绑定
-  （例如左 `option`：`"b.a": { "modifiers": ["option"], "hold": true }`）；写成右 ⌥ 会被启动时的旧配置迁移移除。
-  配置里自定义的 `b.a` 是「一次一击」，不会按住重复，且在浏览器等非 agent App 里会被拦下。
-- 手柄的 **H 档（键盘模式）不消费输入** —— 只识别。C 档两个变体都完整支持。
+- **Codex has no action for cycling permission modes**; use Codex's own UI to change them.
+- **The Claude-side mappings are less thoroughly researched** than Codex's, and `queueFollowUp` is unavailable in Claude.
+- **Holding B is the app switcher, not "reject"**: tap B to reject an approval. This is a deliberate trade-off.
+- **Switching apps relies on AppleScript**: in-process `activate()` / AX / a synthesized `⌘⇥` all failed on macOS 27, so
+  `NSAppleEventsUsageDescription` in `Info.plist` is required. Should the system change its rules, the log prints the method that
+  worked (`via appleScript`) and every failure reason.
+- **Tap A sends Enter on release** (up to 220 ms late): only on release is it known whether the press was a tap or push-to-talk.
+  Sending on press would mean giving up one-button voice input; a trade-off, not a bug.
+- **On-screen notices cannot be dismissed**, only waited out (3 seconds), and there are no success notices.
+- **Only Codex has the four-way dial**; Claude stays a list, and the choice is not saved across restarts.
+- **Voice input is bound to holding A only** (`B+A` is backspace). To put voice on `B+A`, give `b.a` a binding that is **not right ⌥**
+  (for example left `option`: `"b.a": { "modifiers": ["option"], "hold": true }`); right ⌥ is removed at launch by the old-config migration.
+  A custom `b.a` fires once per press, does not repeat while held, and is blocked in non-agent apps such as browsers.
+- The controller's **H mode (keyboard mode) is detected but not consumed**. Both C-mode variants are fully supported.
 
 ---
 
-## 目录
+## Repository layout
 
 ```text
-docs/HANDOFF.md                ⭐ 开发者入口：当前实现状态与关键设计决策
-docs/spec-v0.3.md              最初的设计规格（部分已被实现取代，见 HANDOFF §6）
-docs/ux-roadmap.md             体验路线图与执行计划
-docs/test-manual.md            功能测试手册（逐项实机验收步骤）
-docs/pending-user-tests.md     早期的实机验证清单
-docs/codex-shortcuts.md        Codex 快捷键（官方面板 + 菜单实测导出）
-docs/codex-menu-shortcuts.md   菜单导出早期版本（44 条，对照用）
-docs/phase0-summary.md         硬件实测结论与实现约束
-docs/hardware-probe.md         Phase 0 原始记录
-docs/phase1-verification.md    Phase 1 真机验证记录
-docs/research-*.md             Codex / Claude / Codex Micro 调研
-docs/research-claude-commands-verified.md  Claude 命令键位的实测记录（含证据强度分级）
-docs/media/                    README 用的介绍视频（720p）与命令菜单动图
+docs/HANDOFF.md                ⭐ Start here as a developer: current implementation state and key design decisions
+docs/spec-v0.3.md              The original design spec (partly superseded by the implementation, see HANDOFF §6)
+docs/ux-roadmap.md             UX roadmap and execution plan
+docs/test-manual.md            Feature test manual (step-by-step hardware acceptance)
+docs/pending-user-tests.md     Earlier hardware verification checklist
+docs/codex-shortcuts.md        Codex shortcuts (official panel + exported live menu)
+docs/codex-menu-shortcuts.md   Early version of the menu export (44 entries, for comparison)
+docs/phase0-summary.md         Hardware findings and the constraints they impose
+docs/hardware-probe.md         Raw Phase 0 notes
+docs/phase1-verification.md    Phase 1 hardware verification log
+docs/research-*.md             Research on Codex / Claude / Codex Micro
+docs/research-claude-commands-verified.md  Measured Claude command keys, graded by strength of evidence
+docs/media/                    The intro video (720p) and command-menu GIF used by this README
 
-promo/                         介绍视频的源码：动画页 + 配音 + 配乐 + 渲染脚本（见 promo/README.md）
+promo/                         Source of the intro video: animation page + narration + music + renderer (see promo/README.md)
 
-Sources/PocketAgentCore/       全部逻辑（可单测，无 UI 依赖）
-Sources/PocketAgentCore/Focus/ 切前台 App（AppActivator + 两个 agent 的切换规则）
-Sources/PocketAgentApp/        菜单栏 App（薄壳）
-Sources/AgentProbe/            Phase 0 探针
-Sources/AgentCoreSmoke/        Phase 1 真机验证工具
+Sources/PocketAgentCore/       All logic (unit-testable, no UI dependencies)
+Sources/PocketAgentCore/Focus/ Frontmost-app switching (AppActivator + the two-agent switching rules)
+Sources/PocketAgentApp/        The menu-bar app (a thin shell)
+Sources/AgentProbe/            Phase 0 hardware probe
+Sources/AgentCoreSmoke/        Phase 1 hardware verification tool
 
-Tools/dump-menu-accelerators.swift  导出运行中 App 的真实菜单快捷键
-scripts/make-agent-app.sh      构建菜单栏 App
-scripts/make-app.sh            构建探针 App
+Tools/dump-menu-accelerators.swift  Exports the real menu shortcuts of a running app
+scripts/make-agent-app.sh      Builds the menu-bar app
+scripts/make-app.sh            Builds the probe app
 ```
 
-## 开发
+Most documents under `docs/` are in Chinese.
+
+## Development
 
 ```bash
 swift build
-swift test                                  # 345 个测试
-./.build/debug/coresmoke --duration 60      # 真机看手势链路（只打日志）
-./.build/debug/agentprobe watch             # 看原始 HID 报告
-swift Tools/dump-menu-accelerators.swift ChatGPT   # 导出 Codex 的真实菜单快捷键
+swift test                                  # 345 tests
+./.build/debug/coresmoke --duration 60      # watch the gesture pipeline on real hardware (log only)
+./.build/debug/agentprobe watch             # watch raw HID reports
+swift Tools/dump-menu-accelerators.swift ChatGPT   # export Codex's real menu shortcuts
 ```
 
-> 如果 `swift build` 报 `sandbox_apply: Operation not permitted`（SwiftPM 的嵌套沙箱被外层沙箱拒绝），
-> 加 `--disable-sandbox` 即可；`scripts/make-agent-app.sh` 可用
-> `POCKETAGENT_SWIFTPM_FLAGS=--disable-sandbox` 透传。
+> If `swift build` fails with `sandbox_apply: Operation not permitted` (SwiftPM's nested sandbox refused by an outer sandbox),
+> add `--disable-sandbox`; `scripts/make-agent-app.sh` passes it through via `POCKETAGENT_SWIFTPM_FLAGS=--disable-sandbox`.
 
-重新生成介绍视频（改了功能或文案之后）：`promo/make.sh`，环境准备见 `promo/README.md`。
+To regenerate the intro video (after changing features or wording): `promo/make.sh`; setup is described in `promo/README.md`.
 
-> **改键位前先跑最后那条命令。** Codex 的命令注册表里写的键位**不一定是运行时生效的** ——
-> `inspectChanges` 就因此错过一次：注册表的 `⌃⇧G` 毫无反应，菜单里实际绑的是 `⌥⌘B`。
-> 能从运行中菜单读到的，一律以菜单为准。
+> **Run the last command before changing any key binding.** The keys listed in Codex's command registry **are not necessarily the
+> ones in effect at runtime**: `inspectChanges` once missed because of it. The registry's `⌃⇧G` did nothing, while the menu
+> actually bound `⌥⌘B`. Whatever can be read from the running app's menu wins.
 
-## 许可证
+## License
 
-[MIT](LICENSE)。IINE、Gamebrick、Codex、Claude、WeChat 等名称归各自所有者，本项目与它们没有从属关系，仅为描述兼容性而提及。
+[MIT](LICENSE). IINE, Gamebrick, Codex, Claude, WeChat and other names belong to their respective owners; this project is not
+affiliated with them and mentions them only to describe compatibility.
