@@ -453,3 +453,7 @@ swift Tools/dump-menu-accelerators.swift ChatGPT   # 导出 Codex 的真实菜�
 > **改键位前先跑最后那条命令。** Codex 的命令注册表里写的键位**不一定是运行时生效的** ——
 > `inspectChanges` 就因此错过一次：注册表的 `⌃⇧G` 毫无反应，菜单里实际绑的是 `⌥⌘B`。
 > 能从运行中菜单读到的，一律以菜单为准。
+
+## 许可证
+
+[MIT](LICENSE)。IINE、Gamebrick、Codex、Claude、WeChat 等名称归各自所有者，本项目与它们没有从属关系，仅为描述兼容性而提及。

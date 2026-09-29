@@ -3,3 +3,4 @@ logs/
 *.jsonl
 .DS_Store
 build/
+.impl-reports/
